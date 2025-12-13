@@ -19,5 +19,6 @@ pub mod error;
 pub mod shape;
 
 // Re-export key types at crate root for convenience
+pub use cat::{Coproduct, Scope};
 pub use error::CoreError;
 pub use shape::{Shape, TypeId};

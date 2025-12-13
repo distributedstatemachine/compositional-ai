@@ -18,6 +18,8 @@ use std::collections::HashMap;
 use std::fmt;
 use std::hash::Hash;
 
+use crate::shape::TypeId;
+
 /// A morphism in a finite category.
 ///
 /// In category theory, a morphism f: A → B connects two objects.
@@ -280,6 +282,125 @@ pub struct BackpropFunctorMarker;
 /// - Grammar reductions → Tensor contractions
 pub struct SemanticsFunctorMarker;
 
+// ============================================================================
+// Coproducts (Session 3.5)
+// ============================================================================
+
+/// Coproduct of two objects in a category (if it exists).
+///
+/// A coproduct A + B comes with:
+/// - The sum object itself
+/// - Injection i₁: A → A + B (left injection)
+/// - Injection i₂: B → A + B (right injection)
+///
+/// Universal property: For any object C with maps f: A → C and g: B → C,
+/// there exists a unique \[f,g\]: A + B → C such that \[f,g\] ∘ i₁ = f and \[f,g\] ∘ i₂ = g.
+///
+/// In Set, coproduct is disjoint union. In our agent framework, coproduct
+/// captures "choice" — an agent can receive input from either source.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Coproduct<A, B> {
+    /// The coproduct object A + B
+    pub sum: String,
+    /// Injection morphism A → A + B
+    pub inj_left: String,
+    /// Injection morphism B → A + B
+    pub inj_right: String,
+    /// Phantom data for type parameters
+    _phantom: std::marker::PhantomData<(A, B)>,
+}
+
+impl<A, B> Coproduct<A, B> {
+    /// Create a new coproduct with named sum and injections.
+    pub fn new(
+        sum: impl Into<String>,
+        inj_left: impl Into<String>,
+        inj_right: impl Into<String>,
+    ) -> Self {
+        Self {
+            sum: sum.into(),
+            inj_left: inj_left.into(),
+            inj_right: inj_right.into(),
+            _phantom: std::marker::PhantomData,
+        }
+    }
+}
+
+// ============================================================================
+// Scope (Agent Capabilities via Coproduct-Style Merging)
+// ============================================================================
+
+/// Scope: a collection of named objects (like agent scope).
+///
+/// In categorical terms, a scope is a presheaf over a discrete category of names.
+/// Merging scopes is like taking a coproduct — we combine available capabilities.
+///
+/// This is a runtime version of the trait-based capabilities in Session 3.6.
+/// It trades compile-time guarantees for flexibility in dynamic agent systems.
+#[derive(Clone, Debug, Default)]
+pub struct Scope {
+    /// Named objects in the scope, keyed by name
+    objects: HashMap<String, TypeId>,
+}
+
+impl Scope {
+    /// Create an empty scope.
+    pub fn new() -> Self {
+        Self {
+            objects: HashMap::new(),
+        }
+    }
+
+    /// Insert a named object into the scope.
+    pub fn insert(&mut self, name: &str, ty: TypeId) {
+        self.objects.insert(name.to_string(), ty);
+    }
+
+    /// Get the type of a named object.
+    pub fn get(&self, name: &str) -> Option<&TypeId> {
+        self.objects.get(name)
+    }
+
+    /// Check if the scope contains a named object.
+    pub fn contains(&self, name: &str) -> bool {
+        self.objects.contains_key(name)
+    }
+
+    /// Number of objects in the scope.
+    pub fn len(&self) -> usize {
+        self.objects.len()
+    }
+
+    /// Check if scope is empty.
+    pub fn is_empty(&self) -> bool {
+        self.objects.is_empty()
+    }
+
+    /// Merge two scopes (coproduct-style).
+    ///
+    /// This combines all entries from both scopes. If both scopes
+    /// have the same key, the value from `other` wins (right-biased).
+    ///
+    /// Categorical interpretation: This is like a coproduct where
+    /// the injections map each scope into the merged scope.
+    pub fn merge(&self, other: &Scope) -> Self {
+        let mut merged = self.clone();
+        for (k, v) in &other.objects {
+            merged.objects.insert(k.clone(), v.clone());
+        }
+        merged
+    }
+
+    /// List available "morphisms" (methods) — Yoneda-style discovery.
+    ///
+    /// In the Yoneda perspective, knowing what maps INTO an object
+    /// tells you everything about the object. Here, listing available
+    /// names is like asking "what can I access from this scope?"
+    pub fn available_methods(&self) -> Vec<String> {
+        self.objects.keys().cloned().collect()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -346,5 +467,150 @@ mod tests {
         let result = cat.compose("f", "g");
         assert!(result.is_some());
         assert_eq!(result.unwrap().name, "gf");
+    }
+
+    // ========================================================================
+    // Coproduct Tests (Session 3.5)
+    // ========================================================================
+
+    #[test]
+    fn test_coproduct_creation() {
+        let coprod: Coproduct<String, i32> = Coproduct::new("A+B", "inl", "inr");
+        assert_eq!(coprod.sum, "A+B");
+        assert_eq!(coprod.inj_left, "inl");
+        assert_eq!(coprod.inj_right, "inr");
+    }
+
+    // ========================================================================
+    // Scope Tests (Session 3.5)
+    // ========================================================================
+
+    #[test]
+    fn test_scope_new() {
+        let scope = Scope::new();
+        assert!(scope.is_empty());
+        assert_eq!(scope.len(), 0);
+    }
+
+    #[test]
+    fn test_scope_insert_and_get() {
+        let mut scope = Scope::new();
+        scope.insert("db", TypeId("database"));
+        scope.insert("cache", TypeId("redis"));
+
+        assert_eq!(scope.len(), 2);
+        assert!(scope.contains("db"));
+        assert!(scope.contains("cache"));
+        assert!(!scope.contains("llm"));
+
+        assert_eq!(scope.get("db"), Some(&TypeId("database")));
+        assert_eq!(scope.get("cache"), Some(&TypeId("redis")));
+        assert_eq!(scope.get("llm"), None);
+    }
+
+    #[test]
+    fn test_scope_merge_combines_all_entries() {
+        let mut scope_a = Scope::new();
+        scope_a.insert("db", TypeId("postgres"));
+        scope_a.insert("auth", TypeId("oauth"));
+
+        let mut scope_b = Scope::new();
+        scope_b.insert("cache", TypeId("redis"));
+        scope_b.insert("llm", TypeId("claude"));
+
+        let merged = scope_a.merge(&scope_b);
+
+        // All entries from both scopes should be present
+        assert_eq!(merged.len(), 4);
+        assert!(merged.contains("db"));
+        assert!(merged.contains("auth"));
+        assert!(merged.contains("cache"));
+        assert!(merged.contains("llm"));
+    }
+
+    #[test]
+    fn test_scope_merge_is_associative() {
+        // (A ∪ B) ∪ C = A ∪ (B ∪ C)
+        let mut scope_a = Scope::new();
+        scope_a.insert("a", TypeId("A"));
+
+        let mut scope_b = Scope::new();
+        scope_b.insert("b", TypeId("B"));
+
+        let mut scope_c = Scope::new();
+        scope_c.insert("c", TypeId("C"));
+
+        // (A ∪ B) ∪ C
+        let ab = scope_a.merge(&scope_b);
+        let ab_c = ab.merge(&scope_c);
+
+        // A ∪ (B ∪ C)
+        let bc = scope_b.merge(&scope_c);
+        let a_bc = scope_a.merge(&bc);
+
+        // Both should have the same keys and values
+        assert_eq!(ab_c.len(), a_bc.len());
+        assert_eq!(ab_c.get("a"), a_bc.get("a"));
+        assert_eq!(ab_c.get("b"), a_bc.get("b"));
+        assert_eq!(ab_c.get("c"), a_bc.get("c"));
+    }
+
+    #[test]
+    fn test_scope_empty_is_identity() {
+        // A ∪ {} = A
+        let mut scope_a = Scope::new();
+        scope_a.insert("db", TypeId("postgres"));
+        scope_a.insert("cache", TypeId("redis"));
+
+        let empty = Scope::new();
+
+        // A ∪ {} = A
+        let merged_right = scope_a.merge(&empty);
+        assert_eq!(merged_right.len(), scope_a.len());
+        assert_eq!(merged_right.get("db"), scope_a.get("db"));
+        assert_eq!(merged_right.get("cache"), scope_a.get("cache"));
+
+        // {} ∪ A = A
+        let merged_left = empty.merge(&scope_a);
+        assert_eq!(merged_left.len(), scope_a.len());
+        assert_eq!(merged_left.get("db"), scope_a.get("db"));
+        assert_eq!(merged_left.get("cache"), scope_a.get("cache"));
+    }
+
+    #[test]
+    fn test_scope_merge_right_bias_on_conflict() {
+        // When both scopes have the same key, 'other' wins
+        let mut scope_a = Scope::new();
+        scope_a.insert("db", TypeId("postgres"));
+
+        let mut scope_b = Scope::new();
+        scope_b.insert("db", TypeId("mysql"));
+
+        let merged = scope_a.merge(&scope_b);
+
+        // scope_b's value should win
+        assert_eq!(merged.get("db"), Some(&TypeId("mysql")));
+    }
+
+    #[test]
+    fn test_scope_available_methods() {
+        let mut scope = Scope::new();
+        scope.insert("db", TypeId("postgres"));
+        scope.insert("cache", TypeId("redis"));
+        scope.insert("llm", TypeId("claude"));
+
+        let methods = scope.available_methods();
+
+        assert_eq!(methods.len(), 3);
+        assert!(methods.contains(&"db".to_string()));
+        assert!(methods.contains(&"cache".to_string()));
+        assert!(methods.contains(&"llm".to_string()));
+    }
+
+    #[test]
+    fn test_scope_available_methods_empty() {
+        let scope = Scope::new();
+        let methods = scope.available_methods();
+        assert!(methods.is_empty());
     }
 }

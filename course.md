@@ -1,4 +1,4 @@
-Yep — here's the **20-session Rust capstone plan**, where **each session = one commit**, and each session includes:
+Yep — here's the **21-session Rust capstone plan**, where **each session = one commit**, and each session includes:
 
 * **Lesson** (what you learn)
 * **Reading** (short + specific)
@@ -24,29 +24,48 @@ Session 3: Category theory core (FiniteCategory, Functor)
      ↓
 Session 3.5 (Optional): Coproducts + Yoneda (scope merging, dynamic discovery)
      ↓
+Session 3.6: Trait-Based Capabilities (Rust-native scope) ← NEW
+     ↓
 Session 4-5: Diagrams + monoidal composition
      ↓
-Session 6: Rendering ──────────────────────────────────┐
-     ↓                                                 │
-     ├─────────────────┬─────────────────┬────────────┤
+Session 6: Rendering + Zero-Cost Tracing ← ENHANCED
+     ↓
+     ├─────────────────┬─────────────────┬────────────┐
      ↓                 ↓                 ↓            │
-Sessions 7-10      Sessions 11-14    Sessions 15-16   │
-(Autodiff)         (Probability)     (NLP/DisCoCat)   │
-     ↓                 ↓                 ↓            │
-     └─────────────────┴─────────────────┘            │
-                       ↓                              │
-                Sessions 17-18 (Games)                │
-                       ↓                              │
-                Session 19 (Operads) ←────────────────┘
+Sessions 7-10      Sessions 11-14    Sessions 15-16  │
+(Autodiff +        (Probability)     (NLP/DisCoCat)  │
+ Const Generics)                                     │
+     ↓                 ↓                 ↓           │
+     └─────────────────┴─────────────────┘           │
+                       ↓                             │
+                Sessions 17-18 (Games)               │
+                       ↓                             │
+                Session 18.5: Lifetime-Scoped Agents ← NEW
+                       ↓                             │
+                Session 19 (Operads) ←───────────────┘
                        ↓
                 Session 20 (Integration)
+                       ↓
+          ┌────────────────────────────┐
+          │  SESSION 21: CAPSTONE      │
+          │  Rust-Native Agent         │
+          │  Framework                 │
+          │  (Everything converges!)   │
+          └────────────────────────────┘
 ```
+
+**Rust-Native Sessions (from docs/):**
+- **Session 3.6:** Trait-based capabilities replace Python's `Dict[str, Any]` scope
+- **Session 6:** Zero-cost tracing via const generics (debug vs release)
+- **Session 7:** Const generic shapes for compile-time dimension checking
+- **Session 18.5:** Lifetime-scoped agents + `Send + Sync` parallel safety
 
 **Checkpoints:**
 - ✓ **Checkpoint A (Session 6):** Core diagram system complete — you can build, compose, and visualize any diagram
 - ✓ **Checkpoint B (Session 10):** Autodiff working — train a model with gradient descent
 - ✓ **Checkpoint C (Session 14):** Probability track complete — causal inference operational
-- ✓ **Checkpoint D (Session 18):** Games track complete — mechanism design demos working
+- ✓ **Checkpoint D (Session 18.5):** Games track complete — mechanism design + parallel-safe agents
+- ✓ **Checkpoint E (Session 21):** **CAPSTONE** — Full Rust-native agent framework with compile-time safety
 
 ---
 
@@ -238,6 +257,113 @@ Sessions 7-10      Sessions 11-14    Sessions 15-16   │
 
 ---
 
+## Session 3.6 — Trait-Based Capabilities (Rust-Native Scope)
+
+**Reading**
+
+* Review `docs/rust-native-agents.md` sections on trait-based capabilities
+* Rust book: Trait objects vs static dispatch
+
+**Lesson**
+
+* **Why traits beat `Dict[str, Any]` scope:**
+  * Python Agentica: `scope = {"db": db, "cache": cache}` — runtime discovery, no compile-time guarantees
+  * Rust: trait bounds declare required capabilities at compile time
+  * Missing capabilities are compile errors, not runtime `KeyError`
+
+* **Capability traits pattern:**
+  ```rust
+  trait HasDatabase {
+      type DB: Database;
+      fn db(&self) -> &Self::DB;
+  }
+
+  trait HasCache {
+      type Cache: Cache;
+      fn cache(&self) -> &Self::Cache;
+  }
+
+  trait HasLLM {
+      type LLM: LanguageModel;
+      fn llm(&self) -> &Self::LLM;
+  }
+  ```
+
+* **Agent functions declare requirements via bounds:**
+  ```rust
+  async fn research_agent<S>(scope: &S, query: &str) -> Result<Report, AgentError>
+  where
+      S: HasDatabase + HasCache + HasLLM,  // Compile-time requirement
+  {
+      scope.db().query(...).await?;  // Guaranteed to exist
+      scope.cache().get(...).await?;
+      scope.llm().summarize(...).await?
+  }
+  ```
+
+* **Comparison to Session 3.5's `Scope`:**
+  * `Scope` (3.5): runtime dict, flexible but unchecked
+  * Capability traits (3.6): compile-time bounds, rigid but safe
+  * Both are valid — choose based on dynamism requirements
+
+**Build (commit 3.6) — capability traits**
+
+* Add `crates/core/src/capability.rs`
+* Implement:
+
+  ```rust
+  /// Marker trait for scopes with database access
+  pub trait HasDatabase {
+      fn db(&self) -> &dyn Database;
+  }
+
+  /// Marker trait for scopes with cache access
+  pub trait HasCache {
+      fn cache(&self) -> &dyn Cache;
+  }
+
+  /// Marker trait for scopes with LLM access
+  pub trait HasLLM {
+      fn llm(&self) -> &dyn LanguageModel;
+  }
+
+  /// Minimal trait definitions for demo
+  pub trait Database: Send + Sync {
+      fn query(&self, q: &str) -> String;
+  }
+
+  pub trait Cache: Send + Sync {
+      fn get(&self, key: &str) -> Option<String>;
+      fn set(&self, key: &str, value: &str);
+  }
+
+  pub trait LanguageModel: Send + Sync {
+      fn complete(&self, prompt: &str) -> String;
+  }
+
+  /// Combine two scopes — traits compose via multiple bounds
+  pub struct CombinedScope<A, B> {
+      pub a: A,
+      pub b: B,
+  }
+
+  impl<A: HasDatabase, B> HasDatabase for CombinedScope<A, B> {
+      fn db(&self) -> &dyn Database { self.a.db() }
+  }
+
+  impl<A, B: HasCache> HasCache for CombinedScope<A, B> {
+      fn cache(&self) -> &dyn Cache { self.b.cache() }
+  }
+  ```
+
+* Tests:
+  * Agent with `S: HasDatabase` compiles when scope implements `HasDatabase`
+  * Agent with `S: HasDatabase + HasLLM` fails to compile with scope missing `HasLLM`
+  * `CombinedScope` correctly delegates to inner scopes
+  * Capability bounds are `Send + Sync` safe for async contexts
+
+---
+
 ## Session 4 — Open diagrams (string diagram data model)
 
 **Reading**
@@ -303,17 +429,72 @@ Sessions 7-10      Sessions 11-14    Sessions 15-16   │
 
 * Why diagram rendering matters: you debug by *seeing*
 * Rewrite mindset: refactors preserve meaning
+* **Zero-cost tracing (Rust-native advantage):**
+  * Python Agentica: tracing always enabled, always costs tokens/time
+  * Rust: const generic toggle — zero cost when disabled
+  * Same code, different compile-time flags → completely different runtime behavior
 
-**Build (commit 6) — ASCII + DOT**
+**Build (commit 6) — ASCII + DOT + Zero-Cost Tracing**
 
 * Add to `core::diagram`:
 
   * `render_ascii()` (node list + edges with port indices + shapes)
   * `to_dot()` (Graphviz DOT string)
+
+* Implement **zero-cost tracing wrapper:**
+
+  ```rust
+  /// Const generic toggle — zero cost when disabled
+  pub struct Traced<C, const ENABLED: bool> {
+      inner: C,
+  }
+
+  impl<C: Computation> Computation for Traced<C, false> {
+      type Input = C::Input;
+      type Output = C::Output;
+
+      async fn run(&self, input: Self::Input) -> Result<Self::Output, CoreError> {
+          // No tracing code generated — zero overhead
+          self.inner.run(input).await
+      }
+  }
+
+  impl<C: Computation> Computation for Traced<C, true> {
+      type Input = C::Input;
+      type Output = (C::Output, TraceNode);
+
+      async fn run(&self, input: Self::Input) -> Result<Self::Output, CoreError> {
+          let start = std::time::Instant::now();
+          let result = self.inner.run(input).await?;
+          let trace = TraceNode {
+              duration: start.elapsed(),
+              type_name: std::any::type_name::<C>(),
+          };
+          Ok((result, trace))
+      }
+  }
+
+  /// Compile-time selection via cfg:
+  #[cfg(debug_assertions)]
+  pub type TracedDiagram<O> = Traced<Diagram<O>, true>;   // Debug: full tracing
+
+  #[cfg(not(debug_assertions))]
+  pub type TracedDiagram<O> = Traced<Diagram<O>, false>;  // Release: zero overhead
+  ```
+
+* **Key insight:** The same code path gets completely different behavior:
+  * `cargo run` → full tracing, detailed logs
+  * `cargo run --release` → zero tracing overhead, production-ready
+
 * Add `demos` CLI:
 
   * `cargo run -p demos -- render --dot` prints DOT for a tiny example
-* Tests: snapshot-like string contains expected nodes/edges
+  * `cargo run -p demos -- render --trace` shows trace output (debug only)
+
+* Tests:
+  * snapshot-like string contains expected nodes/edges
+  * `Traced<_, false>` output type equals inner output type
+  * `Traced<_, true>` output type includes `TraceNode`
 
 ---
 
@@ -330,14 +511,57 @@ Sessions 7-10      Sessions 11-14    Sessions 15-16   │
 
 * Evaluation is a monoidal/categorical fold over a DAG
 * Shapes guarantee composability before runtime
+* **Const generic shapes (Rust-native advantage):**
+  * Session 2 introduced `StaticShape` as a marker trait
+  * Now we implement actual const generic tensors for compile-time dimension checking
+  * Trade-off: less flexible than runtime shapes, but catches dimension errors at compile time
 
 **Build (commit 7) — `diff` crate scaffolding + Tensor**
 
 * Add `crates/diff/src/lib.rs`, `tensor.rs`, `ops.rs`
-* Implement `Tensor`:
+* Implement **runtime `Tensor`** (flexible, dynamic):
 
   * `Scalar(f32)`, `Vec(Array1<f32>)`, `Mat(Array2<f32>)`
   * `shape()` -> `Shape`
+
+* Implement **const generic `StaticTensor`** (rigid, compile-time checked):
+
+  ```rust
+  /// Compile-time dimensioned tensor
+  /// Shape errors become compile errors, not runtime panics
+  #[derive(Clone, Debug)]
+  pub struct StaticTensor<T, const N: usize> {
+      data: [T; N],
+  }
+
+  /// Type aliases for common shapes
+  pub type Scalar<T> = StaticTensor<T, 1>;
+  pub type Vector<T, const N: usize> = StaticTensor<T, N>;
+
+  /// A linear layer with compile-time dimension checking
+  pub struct Linear<const IN: usize, const OUT: usize> {
+      weights: [[f32; IN]; OUT],
+      bias: [f32; OUT],
+  }
+
+  impl<const IN: usize, const OUT: usize> Linear<IN, OUT> {
+      pub fn forward(&self, input: Vector<f32, IN>) -> Vector<f32, OUT> {
+          // Shape mismatch is IMPOSSIBLE — won't compile
+          todo!()
+      }
+  }
+
+  // Composing layers — dimensions must chain:
+  // This compiles: 784 → 512 → 256 → 10
+  type MLP = (Linear<784, 512>, Linear<512, 256>, Linear<256, 10>);
+
+  // This WON'T compile — dimension mismatch:
+  // type BadMLP = (Linear<784, 512>, Linear<256, 10>);  // 512 ≠ 256
+  ```
+
+* **When to use which:**
+  * `Tensor` (runtime): dynamic graphs, variable batch sizes, flexibility
+  * `StaticTensor` (const generic): fixed architectures, maximum safety, zero-cost abstractions
 * Add `DiffOp` enum with ports:
 
   * `Add` — elementwise addition, 2 inputs → 1 output (same shape)
@@ -907,6 +1131,153 @@ Sessions 7-10      Sessions 11-14    Sessions 15-16   │
 
 ---
 
+## Session 18.5 — Lifetime-Scoped Agents and Parallel Safety
+
+**Reading**
+
+* Review `docs/rust-native-agents.md` sections on lifetime-scoped agents
+* Rust book: Lifetimes, `Send`, `Sync` traits
+* Tokio docs: Spawning tasks with `Send` bounds
+
+**Lesson**
+
+* **Why Python needs sandboxes, Rust doesn't:**
+  * Python Agentica: WASM sandbox + microVM for isolation (runtime overhead)
+  * Rust: Borrow checker enforces isolation at compile time (zero overhead)
+  * Agent literally cannot access what's not in its scope — compiler proves it
+
+* **Lifetime-scoped agents:**
+  ```rust
+  /// Agent borrows scope — cannot outlive it
+  struct Agent<'scope, S> {
+      scope: &'scope S,
+      config: AgentConfig,
+  }
+
+  impl<'scope, S> Agent<'scope, S>
+  where
+      S: HasDatabase + HasLLM,
+  {
+      fn new(scope: &'scope S, config: AgentConfig) -> Self {
+          Self { scope, config }
+      }
+
+      async fn call(&self, task: &str) -> Result<Output, AgentError> {
+          // Can access scope.db(), scope.llm()
+          // Cannot store references beyond 'scope lifetime
+          let data = self.scope.db().query(task).await?;
+          self.scope.llm().process(&data).await
+      }
+  }
+
+  // Usage:
+  fn run_agent() {
+      let resources = Resources::new();
+      {
+          let agent = Agent::new(&resources, config);
+          agent.call("task").await;
+      }  // agent dropped, scope borrow ends
+
+      // resources still valid here, agent gone
+      // No leaks, no dangling refs — compiler enforced
+  }
+  ```
+
+* **Parallel safety via `Send + Sync`:**
+  * `Send`: type can be transferred to another thread
+  * `Sync`: type can be shared between threads via `&T`
+  * Compiler proves parallel safety — data races are compile errors
+
+  ```rust
+  /// Parallel execution — compiler enforces safety
+  async fn parallel_agents<S>(scope: Arc<S>) -> (A, B)
+  where
+      S: HasDatabase + HasLLM + Send + Sync,
+  {
+      // Arc<S> is Send — can be moved to other tasks
+      // S: Sync — &S can be shared across threads
+      tokio::join!(
+          tokio::spawn({
+              let s = scope.clone();
+              async move { agent1(&*s).await }
+          }),
+          tokio::spawn({
+              let s = scope.clone();
+              async move { agent2(&*s).await }
+          }),
+      )
+  }
+
+  // This WON'T compile — can't share &mut across tasks:
+  async fn bad_parallel<S: HasDatabase>(scope: &mut S) {
+      tokio::join!(
+          write_tool(scope),  // &mut S
+          write_tool(scope),  // &mut S — ERROR: can't borrow mutably twice
+      );
+  }
+  ```
+
+* **Comparison to Python's `asyncio.gather`:**
+  * Python: "hope these don't race" — runtime errors if they do
+  * Rust: "compiler proves these don't race" — won't compile if unsafe
+
+**Build (commit 18.5) — lifetime-scoped agents**
+
+* Add `crates/games/src/agent.rs`
+* Implement:
+
+  ```rust
+  /// A lifetime-scoped agent that borrows its capabilities
+  pub struct ScopedAgent<'scope, S> {
+      scope: &'scope S,
+      name: String,
+  }
+
+  impl<'scope, S> ScopedAgent<'scope, S>
+  where
+      S: Send + Sync,
+  {
+      pub fn new(scope: &'scope S, name: impl Into<String>) -> Self {
+          Self { scope, name: name.into() }
+      }
+  }
+
+  /// Parallel agent execution with proven safety
+  pub async fn run_parallel<S, A, B, FA, FB>(
+      scope: Arc<S>,
+      agent_a: FA,
+      agent_b: FB,
+  ) -> (A, B)
+  where
+      S: Send + Sync + 'static,
+      A: Send + 'static,
+      B: Send + 'static,
+      FA: FnOnce(Arc<S>) -> A + Send + 'static,
+      FB: FnOnce(Arc<S>) -> B + Send + 'static,
+  {
+      let (a, b) = tokio::join!(
+          tokio::spawn({
+              let s = scope.clone();
+              async move { agent_a(s) }
+          }),
+          tokio::spawn({
+              let s = scope.clone();
+              async move { agent_b(s) }
+          }),
+      );
+      (a.unwrap(), b.unwrap())
+  }
+  ```
+
+* Tests:
+  * `ScopedAgent` cannot outlive its scope (compile-time check — use `trybuild` crate)
+  * Parallel execution with `Send + Sync` scope compiles and runs
+  * Parallel execution with non-`Sync` scope fails to compile
+  * Multiple read-only borrows in parallel succeed
+  * Concurrent mutable borrows fail to compile
+
+---
+
 # Operads + integration (Sessions 19–20)
 
 ## Session 19 — Operads: multi-input wiring constraints
@@ -1001,16 +1372,22 @@ Sessions 7-10      Sessions 11-14    Sessions 15-16   │
 
 ---
 
-## Session 20 — Polish + one coherent CLI + README story
+## Session 20 — Polish + Integration (Preparing for Capstone)
 
 **Reading**
 
 * Re-skim *Seven Sketches* intro: "composition is the interface"
+* Review `docs/rust-native-agents.md` — what's coming in Session 21
 
 **Lesson**
 
 * Unification: same core wiring abstraction supports learning/probability/semantics/games
 * Present it as a systems tool, not "math homework"
+* **Preparing for the capstone:** Review how each component will contribute:
+  * Shapes → Tool input/output types
+  * Diagrams → Agent execution traces
+  * Tracing → Zero-cost debug logs
+  * Capabilities → Compile-time resource requirements
 
 **Build (commit 20) — integration**
 
@@ -1021,8 +1398,14 @@ Sessions 7-10      Sessions 11-14    Sessions 15-16   │
 
   * 1 page narrative + how to run each demo
   * include ASCII render snippets
-* Add workspace-wide `cargo test` + clippy cleanups (optional)
-* Done-when: `cargo run -p demos -- diff` etc all work
+* Add workspace-wide `cargo test` + clippy cleanups
+* **Pre-capstone checklist:**
+  * [ ] All crates compile with `--all-features`
+  * [ ] `compositional_core::Shape` exports cleanly
+  * [ ] `compositional_core::Diagram` is generic and reusable
+  * [ ] Tracing wrapper compiles with const generics
+  * [ ] All tests pass: `cargo test --workspace`
+* Done-when: `cargo run -p demos -- diff` etc all work, ready for Session 21
 
 ---
 
@@ -1113,6 +1496,972 @@ Sessions 7-10      Sessions 11-14    Sessions 15-16   │
   * `CpuBackend` produces same results as direct `forward()` execution
   * Compiled graph caches correctly (re-execution doesn't recompile)
   * Backend trait is object-safe (can use `dyn Backend`)
+
+---
+
+# Capstone: Rust-Native Agent Framework (Session 21)
+
+## Session 21 — Building a Complete Agent System
+
+*This is the capstone project. Everything you've built culminates here.*
+
+**Reading**
+
+* Review `docs/rust-native-agents.md` and `docs/agentica-improvements.md`
+* Optional: Agentica Python SDK for comparison
+
+**Lesson**
+
+* **How each session contributes to the agent framework:**
+
+  | Session | Contribution to Agents |
+  |---------|----------------------|
+  | 1-2 (Shapes) | Tool input/output type checking |
+  | 3 (Functors) | Sandboxing as functor, proxy transformations |
+  | 3.5 (Coproducts) | Scope merging for multi-source capabilities |
+  | 3.6 (Capabilities) | Trait-based `HasDatabase`, `HasLLM` bounds |
+  | 4-5 (Diagrams) | Agent execution traces as diagrams |
+  | 6 (Tracing) | Zero-cost debug tracing for agent calls |
+  | 7-10 (Autodiff) | Credit assignment through agent traces |
+  | 11-14 (Probability) | Uncertainty in tool outputs, Bayesian reasoning |
+  | 15-16 (DisCoCat) | Compositional prompt understanding |
+  | 17-18 (Games) | Multi-agent incentive alignment |
+  | 18.5 (Lifetimes) | Parallel-safe agent execution |
+  | 19 (Operads) | Multi-tool orchestration with arity constraints |
+
+* **The Rust advantage over Python Agentica:**
+  * Compile-time capability checking (not runtime `KeyError`)
+  * Zero-cost isolation via borrow checker (not WASM sandbox)
+  * Proven parallel safety via `Send + Sync` (not hope-based `asyncio`)
+  * Type-level composition `Then<A, B>` (not runtime dict merge)
+
+**Build (commit 21) — `agents` crate**
+
+* Add `crates/agents/src/lib.rs` with these modules:
+  * `scope.rs` — Capability traits and scope composition
+  * `tool.rs` — Tool trait and implementations
+  * `llm.rs` — LLM client abstraction
+  * `agent.rs` — Core agent loop
+  * `trace.rs` — Execution tracing as diagrams
+  * `orchestrator.rs` — Multi-agent coordination
+
+### Part 1: Core Agent Types
+
+```rust
+// crates/agents/src/lib.rs
+
+pub mod scope;
+pub mod tool;
+pub mod llm;
+pub mod agent;
+pub mod trace;
+pub mod orchestrator;
+
+pub use scope::{HasDatabase, HasCache, HasLLM, CombinedScope};
+pub use tool::{Tool, ToolRegistry, ToolCall, ToolResult};
+pub use llm::{LLMClient, Message, CompletionRequest};
+pub use agent::{Agent, AgentConfig, AgentError};
+pub use trace::{AgentTrace, TraceNode, TracedAgent};
+pub use orchestrator::{Orchestrator, OrchestratorConfig};
+```
+
+### Part 2: Capability-Based Scope (from Session 3.6)
+
+```rust
+// crates/agents/src/scope.rs
+
+use std::sync::Arc;
+
+/// Capability traits — compile-time requirements
+pub trait HasDatabase: Send + Sync {
+    fn db(&self) -> &dyn Database;
+}
+
+pub trait HasCache: Send + Sync {
+    fn cache(&self) -> &dyn Cache;
+}
+
+pub trait HasLLM: Send + Sync {
+    fn llm(&self) -> &dyn LLMClient;
+}
+
+/// Database abstraction
+pub trait Database: Send + Sync {
+    fn query(&self, sql: &str) -> Result<Vec<Row>, DbError>;
+    fn execute(&self, sql: &str) -> Result<usize, DbError>;
+}
+
+/// Cache abstraction
+pub trait Cache: Send + Sync {
+    fn get(&self, key: &str) -> Option<String>;
+    fn set(&self, key: &str, value: &str, ttl_secs: u64);
+}
+
+/// Scope composition — combine capabilities from multiple sources
+pub struct CombinedScope<A, B> {
+    pub a: A,
+    pub b: B,
+}
+
+impl<A: HasDatabase, B> HasDatabase for CombinedScope<A, B> {
+    fn db(&self) -> &dyn Database { self.a.db() }
+}
+
+impl<A, B: HasCache> HasCache for CombinedScope<A, B> {
+    fn cache(&self) -> &dyn Cache { self.b.cache() }
+}
+
+impl<A, B: HasLLM> HasLLM for CombinedScope<A, B> {
+    fn llm(&self) -> &dyn LLMClient { self.b.llm() }
+}
+
+/// Production scope with all capabilities
+pub struct ProductionScope {
+    db: Arc<dyn Database>,
+    cache: Arc<dyn Cache>,
+    llm: Arc<dyn LLMClient>,
+}
+
+impl HasDatabase for ProductionScope {
+    fn db(&self) -> &dyn Database { &*self.db }
+}
+
+impl HasCache for ProductionScope {
+    fn cache(&self) -> &dyn Cache { &*self.cache }
+}
+
+impl HasLLM for ProductionScope {
+    fn llm(&self) -> &dyn LLMClient { &*self.llm }
+}
+```
+
+### Part 3: Tool System (from Sessions 4-5, 19)
+
+```rust
+// crates/agents/src/tool.rs
+
+use compositional_core::{Shape, Diagram, CoreError};
+use std::collections::HashMap;
+
+/// A tool that an agent can call
+pub trait Tool: Send + Sync {
+    /// Tool name for LLM function calling
+    fn name(&self) -> &str;
+
+    /// JSON schema for the tool's parameters
+    fn schema(&self) -> serde_json::Value;
+
+    /// Input/output shapes for diagram composition
+    fn input_shape(&self) -> Shape;
+    fn output_shape(&self) -> Shape;
+
+    /// Execute the tool
+    fn call(&self, args: serde_json::Value) -> Result<ToolResult, ToolError>;
+}
+
+/// Result of a tool call
+#[derive(Debug, Clone)]
+pub struct ToolResult {
+    pub output: serde_json::Value,
+    pub shape: Shape,
+}
+
+/// Tool registry with compile-time capability requirements
+pub struct ToolRegistry<S> {
+    tools: HashMap<String, Box<dyn Tool>>,
+    _scope: std::marker::PhantomData<S>,
+}
+
+impl<S> ToolRegistry<S> {
+    pub fn new() -> Self {
+        Self {
+            tools: HashMap::new(),
+            _scope: std::marker::PhantomData,
+        }
+    }
+
+    /// Register a tool that requires specific capabilities
+    pub fn register<T: Tool + 'static>(&mut self, tool: T) {
+        self.tools.insert(tool.name().to_string(), Box::new(tool));
+    }
+
+    pub fn get(&self, name: &str) -> Option<&dyn Tool> {
+        self.tools.get(name).map(|t| t.as_ref())
+    }
+
+    pub fn list(&self) -> Vec<&str> {
+        self.tools.keys().map(|s| s.as_str()).collect()
+    }
+
+    /// Convert tool calls to a Diagram for tracing (Session 4-5)
+    pub fn to_diagram(&self, calls: &[ToolCall]) -> Diagram<ToolOp> {
+        // Build diagram from tool call sequence
+        todo!()
+    }
+}
+
+/// A tool call request from the LLM
+#[derive(Debug, Clone)]
+pub struct ToolCall {
+    pub name: String,
+    pub arguments: serde_json::Value,
+}
+
+/// Diagram operation for tool calls
+#[derive(Debug, Clone)]
+pub struct ToolOp {
+    pub tool_name: String,
+    pub input_shape: Shape,
+    pub output_shape: Shape,
+}
+```
+
+### Part 4: LLM Client Abstraction
+
+```rust
+// crates/agents/src/llm.rs
+
+use async_trait::async_trait;
+
+/// Message in conversation
+#[derive(Debug, Clone)]
+pub struct Message {
+    pub role: Role,
+    pub content: String,
+    pub tool_calls: Option<Vec<ToolCall>>,
+    pub tool_call_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Role {
+    System,
+    User,
+    Assistant,
+    Tool,
+}
+
+/// Request to the LLM
+#[derive(Debug, Clone)]
+pub struct CompletionRequest {
+    pub messages: Vec<Message>,
+    pub tools: Option<Vec<serde_json::Value>>,
+    pub max_tokens: usize,
+}
+
+/// Response from the LLM
+#[derive(Debug, Clone)]
+pub struct CompletionResponse {
+    pub message: Message,
+    pub usage: Usage,
+}
+
+#[derive(Debug, Clone)]
+pub struct Usage {
+    pub prompt_tokens: usize,
+    pub completion_tokens: usize,
+}
+
+/// LLM client trait — implement for Claude, GPT, etc.
+#[async_trait]
+pub trait LLMClient: Send + Sync {
+    async fn complete(&self, request: CompletionRequest) -> Result<CompletionResponse, LLMError>;
+}
+
+/// Mock LLM for testing
+pub struct MockLLM {
+    responses: Vec<CompletionResponse>,
+}
+
+impl MockLLM {
+    pub fn with_responses(responses: Vec<CompletionResponse>) -> Self {
+        Self { responses }
+    }
+}
+
+#[async_trait]
+impl LLMClient for MockLLM {
+    async fn complete(&self, _request: CompletionRequest) -> Result<CompletionResponse, LLMError> {
+        // Return next response in sequence
+        todo!()
+    }
+}
+```
+
+### Part 5: Core Agent Loop (from Sessions 3.6, 18.5)
+
+```rust
+// crates/agents/src/agent.rs
+
+use crate::{scope::*, tool::*, llm::*, trace::*};
+use std::sync::Arc;
+
+/// Agent configuration
+#[derive(Debug, Clone)]
+pub struct AgentConfig {
+    pub system_prompt: String,
+    pub max_turns: usize,
+    pub max_tool_calls: usize,
+}
+
+/// Core agent — generic over scope capabilities
+pub struct Agent<'scope, S> {
+    scope: &'scope S,
+    config: AgentConfig,
+    tools: ToolRegistry<S>,
+}
+
+impl<'scope, S> Agent<'scope, S>
+where
+    S: HasLLM + Send + Sync,
+{
+    pub fn new(scope: &'scope S, config: AgentConfig) -> Self {
+        Self {
+            scope,
+            config,
+            tools: ToolRegistry::new(),
+        }
+    }
+
+    pub fn with_tool<T: Tool + 'static>(mut self, tool: T) -> Self {
+        self.tools.register(tool);
+        self
+    }
+
+    /// Run the agent loop
+    pub async fn run(&self, task: &str) -> Result<AgentResult, AgentError> {
+        let mut messages = vec![
+            Message {
+                role: Role::System,
+                content: self.config.system_prompt.clone(),
+                tool_calls: None,
+                tool_call_id: None,
+            },
+            Message {
+                role: Role::User,
+                content: task.to_string(),
+                tool_calls: None,
+                tool_call_id: None,
+            },
+        ];
+
+        let mut trace = AgentTrace::new();
+        let mut turns = 0;
+
+        loop {
+            if turns >= self.config.max_turns {
+                return Err(AgentError::MaxTurnsExceeded);
+            }
+
+            // Call LLM
+            let request = CompletionRequest {
+                messages: messages.clone(),
+                tools: Some(self.tool_schemas()),
+                max_tokens: 4096,
+            };
+
+            let response = self.scope.llm().complete(request).await?;
+            trace.record_llm_call(&response);
+
+            // Check for tool calls
+            if let Some(tool_calls) = &response.message.tool_calls {
+                for call in tool_calls {
+                    let result = self.execute_tool(call)?;
+                    trace.record_tool_call(call, &result);
+
+                    messages.push(Message {
+                        role: Role::Tool,
+                        content: serde_json::to_string(&result.output)?,
+                        tool_calls: None,
+                        tool_call_id: Some(call.name.clone()),
+                    });
+                }
+                messages.push(response.message);
+            } else {
+                // No tool calls — agent is done
+                return Ok(AgentResult {
+                    response: response.message.content,
+                    trace,
+                });
+            }
+
+            turns += 1;
+        }
+    }
+
+    fn tool_schemas(&self) -> Vec<serde_json::Value> {
+        self.tools.list()
+            .iter()
+            .filter_map(|name| self.tools.get(name))
+            .map(|t| t.schema())
+            .collect()
+    }
+
+    fn execute_tool(&self, call: &ToolCall) -> Result<ToolResult, AgentError> {
+        let tool = self.tools.get(&call.name)
+            .ok_or_else(|| AgentError::UnknownTool(call.name.clone()))?;
+        tool.call(call.arguments.clone())
+            .map_err(AgentError::ToolError)
+    }
+}
+
+/// Result of agent execution
+#[derive(Debug)]
+pub struct AgentResult {
+    pub response: String,
+    pub trace: AgentTrace,
+}
+```
+
+### Part 6: Execution Tracing as Diagrams (from Sessions 4-6, 9)
+
+```rust
+// crates/agents/src/trace.rs
+
+use compositional_core::{Diagram, Shape};
+use crate::{tool::*, llm::*};
+use std::time::{Duration, Instant};
+
+/// Complete trace of agent execution
+#[derive(Debug)]
+pub struct AgentTrace {
+    pub nodes: Vec<TraceNode>,
+    pub start_time: Instant,
+    pub total_duration: Duration,
+}
+
+/// A single node in the trace
+#[derive(Debug)]
+pub enum TraceNode {
+    LLMCall {
+        prompt_tokens: usize,
+        completion_tokens: usize,
+        duration: Duration,
+    },
+    ToolCall {
+        tool_name: String,
+        input: serde_json::Value,
+        output: serde_json::Value,
+        duration: Duration,
+    },
+}
+
+impl AgentTrace {
+    pub fn new() -> Self {
+        Self {
+            nodes: Vec::new(),
+            start_time: Instant::now(),
+            total_duration: Duration::ZERO,
+        }
+    }
+
+    pub fn record_llm_call(&mut self, response: &CompletionResponse) {
+        self.nodes.push(TraceNode::LLMCall {
+            prompt_tokens: response.usage.prompt_tokens,
+            completion_tokens: response.usage.completion_tokens,
+            duration: Duration::ZERO, // Would measure actual duration
+        });
+    }
+
+    pub fn record_tool_call(&mut self, call: &ToolCall, result: &ToolResult) {
+        self.nodes.push(TraceNode::ToolCall {
+            tool_name: call.name.clone(),
+            input: call.arguments.clone(),
+            output: result.output.clone(),
+            duration: Duration::ZERO,
+        });
+    }
+
+    /// Convert trace to a Diagram for visualization and credit assignment
+    /// This connects to Session 9's backprop-style credit assignment
+    pub fn to_diagram(&self) -> Diagram<TraceOp> {
+        // Build diagram from trace nodes
+        // Each node becomes a box, edges show data flow
+        todo!()
+    }
+
+    /// Credit assignment: which tool calls contributed to success/failure?
+    /// Uses reverse-mode traversal like Session 9's autodiff
+    pub fn credit_assignment(&self, outcome_score: f32) -> Vec<(String, f32)> {
+        // Propagate credit backward through trace
+        // Similar to VJP but for discrete tool calls
+        todo!()
+    }
+
+    /// Render trace as ASCII (from Session 6)
+    pub fn render_ascii(&self) -> String {
+        let mut output = String::new();
+        for (i, node) in self.nodes.iter().enumerate() {
+            match node {
+                TraceNode::LLMCall { prompt_tokens, completion_tokens, .. } => {
+                    output.push_str(&format!(
+                        "[{}] LLM: {} prompt + {} completion tokens\n",
+                        i, prompt_tokens, completion_tokens
+                    ));
+                }
+                TraceNode::ToolCall { tool_name, .. } => {
+                    output.push_str(&format!("[{}] Tool: {}\n", i, tool_name));
+                }
+            }
+        }
+        output
+    }
+}
+
+/// Operation type for trace diagrams
+#[derive(Debug, Clone)]
+pub enum TraceOp {
+    LLM,
+    Tool(String),
+}
+```
+
+### Part 7: Multi-Agent Orchestration (from Sessions 17-19)
+
+```rust
+// crates/agents/src/orchestrator.rs
+
+use crate::{agent::*, scope::*};
+use std::sync::Arc;
+use tokio::sync::Mutex;
+
+/// Orchestrator configuration
+#[derive(Debug, Clone)]
+pub struct OrchestratorConfig {
+    pub max_agents: usize,
+    pub timeout_secs: u64,
+}
+
+/// Multi-agent orchestrator with operadic composition (Session 19)
+pub struct Orchestrator<S> {
+    scope: Arc<S>,
+    config: OrchestratorConfig,
+}
+
+impl<S> Orchestrator<S>
+where
+    S: HasLLM + Send + Sync + 'static,
+{
+    pub fn new(scope: Arc<S>, config: OrchestratorConfig) -> Self {
+        Self { scope, config }
+    }
+
+    /// Run agents in parallel with proven safety (Session 18.5)
+    /// Compiler enforces S: Send + Sync
+    pub async fn parallel<A, B>(
+        &self,
+        agent_a: impl FnOnce(Arc<S>) -> A + Send + 'static,
+        agent_b: impl FnOnce(Arc<S>) -> B + Send + 'static,
+    ) -> (A, B)
+    where
+        A: Send + 'static,
+        B: Send + 'static,
+    {
+        let scope_a = self.scope.clone();
+        let scope_b = self.scope.clone();
+
+        let (a, b) = tokio::join!(
+            tokio::spawn(async move { agent_a(scope_a) }),
+            tokio::spawn(async move { agent_b(scope_b) }),
+        );
+
+        (a.unwrap(), b.unwrap())
+    }
+
+    /// Sequential composition with type checking (Session 5's `then`)
+    pub async fn sequence<A, B, R1, R2>(
+        &self,
+        first: impl FnOnce(Arc<S>) -> R1 + Send + 'static,
+        second: impl FnOnce(Arc<S>, R1) -> R2 + Send + 'static,
+    ) -> R2
+    where
+        R1: Send + 'static,
+        R2: Send + 'static,
+    {
+        let scope = self.scope.clone();
+        let result1 = first(scope.clone());
+        second(scope, result1)
+    }
+
+    /// Operadic composition: run exactly N agents and combine results
+    /// Arity is enforced at compile time via tuple types (Session 19)
+    pub async fn combine_3<A1, A2, A3, R>(
+        &self,
+        agent1: impl FnOnce(Arc<S>) -> A1 + Send + 'static,
+        agent2: impl FnOnce(Arc<S>) -> A2 + Send + 'static,
+        agent3: impl FnOnce(Arc<S>) -> A3 + Send + 'static,
+        combiner: impl FnOnce(A1, A2, A3) -> R,
+    ) -> R
+    where
+        A1: Send + 'static,
+        A2: Send + 'static,
+        A3: Send + 'static,
+    {
+        let (r1, r2, r3) = tokio::join!(
+            tokio::spawn({ let s = self.scope.clone(); async move { agent1(s) } }),
+            tokio::spawn({ let s = self.scope.clone(); async move { agent2(s) } }),
+            tokio::spawn({ let s = self.scope.clone(); async move { agent3(s) } }),
+        );
+
+        combiner(r1.unwrap(), r2.unwrap(), r3.unwrap())
+    }
+}
+```
+
+### Part 8: Example Tools
+
+```rust
+// crates/agents/src/tools/search.rs
+
+use crate::{tool::*, scope::*};
+
+/// Web search tool
+pub struct SearchTool;
+
+impl Tool for SearchTool {
+    fn name(&self) -> &str { "search" }
+
+    fn schema(&self) -> serde_json::Value {
+        serde_json::json!({
+            "type": "function",
+            "function": {
+                "name": "search",
+                "description": "Search the web for information",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Search query"
+                        }
+                    },
+                    "required": ["query"]
+                }
+            }
+        })
+    }
+
+    fn input_shape(&self) -> Shape {
+        Shape::scalar(TypeId("string"))
+    }
+
+    fn output_shape(&self) -> Shape {
+        Shape::vector(TypeId("string"), 10)  // Up to 10 results
+    }
+
+    fn call(&self, args: serde_json::Value) -> Result<ToolResult, ToolError> {
+        let query = args["query"].as_str()
+            .ok_or(ToolError::InvalidArgs("missing query".into()))?;
+
+        // Mock search results
+        Ok(ToolResult {
+            output: serde_json::json!([
+                {"title": "Result 1", "snippet": "..."},
+                {"title": "Result 2", "snippet": "..."},
+            ]),
+            shape: self.output_shape(),
+        })
+    }
+}
+
+/// Database query tool — requires HasDatabase capability
+pub struct DbQueryTool<S> {
+    scope: std::sync::Arc<S>,
+}
+
+impl<S: HasDatabase> DbQueryTool<S> {
+    pub fn new(scope: std::sync::Arc<S>) -> Self {
+        Self { scope }
+    }
+}
+
+impl<S: HasDatabase + Send + Sync + 'static> Tool for DbQueryTool<S> {
+    fn name(&self) -> &str { "db_query" }
+
+    fn schema(&self) -> serde_json::Value {
+        serde_json::json!({
+            "type": "function",
+            "function": {
+                "name": "db_query",
+                "description": "Query the database",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "sql": {
+                            "type": "string",
+                            "description": "SQL query to execute"
+                        }
+                    },
+                    "required": ["sql"]
+                }
+            }
+        })
+    }
+
+    fn input_shape(&self) -> Shape {
+        Shape::scalar(TypeId("string"))
+    }
+
+    fn output_shape(&self) -> Shape {
+        Shape::vector(TypeId("row"), 100)  // Up to 100 rows
+    }
+
+    fn call(&self, args: serde_json::Value) -> Result<ToolResult, ToolError> {
+        let sql = args["sql"].as_str()
+            .ok_or(ToolError::InvalidArgs("missing sql".into()))?;
+
+        // This compiles because S: HasDatabase
+        let rows = self.scope.db().query(sql)?;
+
+        Ok(ToolResult {
+            output: serde_json::json!(rows),
+            shape: self.output_shape(),
+        })
+    }
+}
+```
+
+### Part 9: Demo — Research Agent
+
+```rust
+// demos/src/agents.rs
+
+use agents::{*, scope::*, tool::*, llm::*};
+use std::sync::Arc;
+
+/// Demo: Research agent that searches and summarizes
+pub async fn demo_research_agent() {
+    // Create scope with mock implementations
+    let scope = Arc::new(ProductionScope::new(
+        MockDatabase::new(),
+        MockCache::new(),
+        MockLLM::with_responses(vec![
+            // First response: call search tool
+            CompletionResponse {
+                message: Message {
+                    role: Role::Assistant,
+                    content: String::new(),
+                    tool_calls: Some(vec![ToolCall {
+                        name: "search".into(),
+                        arguments: serde_json::json!({"query": "Rust async"}),
+                    }]),
+                    tool_call_id: None,
+                },
+                usage: Usage { prompt_tokens: 100, completion_tokens: 50 },
+            },
+            // Second response: summarize results
+            CompletionResponse {
+                message: Message {
+                    role: Role::Assistant,
+                    content: "Rust's async/await provides zero-cost abstractions...".into(),
+                    tool_calls: None,
+                    tool_call_id: None,
+                },
+                usage: Usage { prompt_tokens: 200, completion_tokens: 100 },
+            },
+        ]),
+    ));
+
+    // Create agent with tools
+    let agent = Agent::new(
+        &*scope,
+        AgentConfig {
+            system_prompt: "You are a helpful research assistant.".into(),
+            max_turns: 10,
+            max_tool_calls: 5,
+        },
+    )
+    .with_tool(SearchTool);
+
+    // Run agent
+    let result = agent.run("What is Rust's async model?").await.unwrap();
+
+    println!("Response: {}", result.response);
+    println!("\nTrace:\n{}", result.trace.render_ascii());
+}
+
+/// Demo: Parallel agents with orchestrator
+pub async fn demo_parallel_agents() {
+    let scope = Arc::new(ProductionScope::new(/* ... */));
+
+    let orchestrator = Orchestrator::new(
+        scope,
+        OrchestratorConfig {
+            max_agents: 3,
+            timeout_secs: 30,
+        },
+    );
+
+    // Run research + analysis in parallel (Session 18.5 safety)
+    let (research_result, analysis_result) = orchestrator.parallel(
+        |s| async move {
+            let agent = Agent::new(&*s, research_config());
+            agent.run("Research topic X").await
+        },
+        |s| async move {
+            let agent = Agent::new(&*s, analysis_config());
+            agent.run("Analyze data Y").await
+        },
+    ).await;
+
+    println!("Research: {:?}", research_result);
+    println!("Analysis: {:?}", analysis_result);
+}
+```
+
+### Tests
+
+```rust
+// crates/agents/tests/integration.rs
+
+use agents::*;
+
+#[tokio::test]
+async fn test_agent_tool_call() {
+    let scope = TestScope::new();
+    let agent = Agent::new(&scope, test_config())
+        .with_tool(SearchTool);
+
+    let result = agent.run("Search for X").await.unwrap();
+    assert!(!result.response.is_empty());
+    assert!(result.trace.nodes.len() >= 2);  // At least LLM + tool
+}
+
+#[tokio::test]
+async fn test_capability_bounds() {
+    // This test verifies compile-time capability checking
+    struct MinimalScope;
+    impl HasLLM for MinimalScope {
+        fn llm(&self) -> &dyn LLMClient { todo!() }
+    }
+
+    // Agent only needs HasLLM, so this compiles
+    let _agent = Agent::new(&MinimalScope, test_config());
+
+    // DbQueryTool needs HasDatabase, so this would NOT compile:
+    // let _tool = DbQueryTool::new(Arc::new(MinimalScope));
+    // error: MinimalScope doesn't implement HasDatabase
+}
+
+#[tokio::test]
+async fn test_parallel_safety() {
+    let scope = Arc::new(TestScope::new());
+    let orchestrator = Orchestrator::new(scope, test_orchestrator_config());
+
+    // Compiler proves this is safe via Send + Sync bounds
+    let (a, b) = orchestrator.parallel(
+        |s| { /* uses &S */ 1 },
+        |s| { /* uses &S */ 2 },
+    ).await;
+
+    assert_eq!(a + b, 3);
+}
+
+#[tokio::test]
+async fn test_trace_to_diagram() {
+    let scope = TestScope::new();
+    let agent = Agent::new(&scope, test_config())
+        .with_tool(SearchTool)
+        .with_tool(CalculatorTool);
+
+    let result = agent.run("Search and calculate").await.unwrap();
+
+    // Trace converts to diagram (Session 4-5)
+    let diagram = result.trace.to_diagram();
+    assert!(diagram.validate().is_ok());
+}
+
+#[test]
+fn test_scope_composition() {
+    struct DbScope;
+    impl HasDatabase for DbScope {
+        fn db(&self) -> &dyn Database { todo!() }
+    }
+
+    struct LLMScope;
+    impl HasLLM for LLMScope {
+        fn llm(&self) -> &dyn LLMClient { todo!() }
+    }
+
+    // Combine scopes — result has both capabilities
+    let combined = CombinedScope { a: DbScope, b: LLMScope };
+
+    // This compiles because combined: HasDatabase + HasLLM
+    fn needs_both<S: HasDatabase + HasLLM>(_s: &S) {}
+    needs_both(&combined);
+}
+```
+
+### CLI Integration
+
+```rust
+// demos/src/main.rs (add to existing)
+
+#[derive(Subcommand)]
+enum Commands {
+    // ... existing commands ...
+
+    /// Run agent demos
+    Agent {
+        #[command(subcommand)]
+        demo: AgentDemo,
+    },
+}
+
+#[derive(Subcommand)]
+enum AgentDemo {
+    /// Single research agent
+    Research,
+    /// Parallel agents with orchestrator
+    Parallel,
+    /// Show trace as diagram
+    Trace,
+}
+
+// In main():
+Commands::Agent { demo } => match demo {
+    AgentDemo::Research => agents::demo_research_agent().await,
+    AgentDemo::Parallel => agents::demo_parallel_agents().await,
+    AgentDemo::Trace => agents::demo_trace_diagram().await,
+},
+```
+
+### Done-when
+
+* [ ] `cargo run -p demos -- agent research` runs successfully
+* [ ] `cargo run -p demos -- agent parallel` demonstrates parallel safety
+* [ ] `cargo run -p demos -- agent trace` shows execution trace as diagram
+* [ ] All capability trait bounds compile correctly
+* [ ] Missing capabilities cause compile errors (not runtime errors)
+* [ ] Parallel execution uses `Send + Sync` bounds
+* [ ] Trace converts to valid `Diagram<TraceOp>`
+* [ ] Credit assignment propagates through trace
+
+---
+
+## What You've Built
+
+Congratulations! You've built a **Rust-native agent framework** that demonstrates:
+
+1. **Compile-time capability checking** — Missing tools/resources are compile errors
+2. **Zero-cost isolation** — Borrow checker, not sandboxes
+3. **Proven parallel safety** — `Send + Sync`, not hope
+4. **Type-level composition** — Diagrams and operads ensure correct wiring
+5. **Credit assignment** — Backprop-style analysis of agent traces
+
+This isn't "Agentica ported to Rust" — it's a fundamentally different architecture where **the type system IS the categorical structure**.
+
+The abstractions from Sessions 1-20 directly enable this:
+- Shapes → Tool type checking
+- Diagrams → Execution traces
+- Functors → Sandboxing/proxying
+- Operads → Multi-tool orchestration
+- `Send + Sync` → Parallel safety
+
+**Next steps:**
+- Integrate with real LLM APIs (Claude, GPT)
+- Add persistent memory via the probability track (Sessions 11-14)
+- Implement learned tool selection using autodiff (Sessions 7-10)
+- Build multi-agent games with incentive alignment (Sessions 17-18)
 
 ---
 
