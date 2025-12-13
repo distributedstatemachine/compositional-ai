@@ -22,6 +22,8 @@ Session 1-2: Foundation (shapes, errors)
      ↓
 Session 3: Category theory core (FiniteCategory, Functor)
      ↓
+Session 3.5 (Optional): Coproducts + Yoneda (scope merging, dynamic discovery)
+     ↓
 Session 4-5: Diagrams + monoidal composition
      ↓
 Session 6: Rendering ──────────────────────────────────┐
@@ -152,6 +154,87 @@ Sessions 7-10      Sessions 11-14    Sessions 15-16   │
   * tiny category + functor check
   * opposite category reverses composition order
   * identity functor preserves structure
+
+---
+
+## Session 3.5 (Optional) — Coproducts and the Yoneda Perspective
+
+**Reading**
+
+* Leinster: Coproducts / colimits sections
+* Milewski: Yoneda lemma chapter (intuition only — skip the proofs)
+
+**Lesson**
+
+* **Coproducts = "merging" objects**
+  * If you have objects A and B, their coproduct A + B is the "smallest" object containing both
+  * Dual to products: instead of projections, you have injections
+  * **Agent application:** Scope merging in systems like Agentica
+    ```
+    global_scope = {db, cache}
+    local_scope  = {api_client}
+    merged_scope = global_scope ∪ local_scope  // coproduct!
+    ```
+
+* **Yoneda perspective: objects are determined by their morphisms**
+  * An object X is fully characterized by all morphisms into it: Hom(-, X)
+  * You don't need to "see inside" X — just know what maps to/from it
+  * **Agent application:** Dynamic tool discovery
+    * Agents discover what an object "is" by calling its methods
+    * No explicit schema needed — introspect the interface
+    ```python
+    # Agent doesn't need a tool definition for `db`
+    # It discovers: db.query(), db.insert(), db.close()
+    # The object IS its interface (Yoneda intuition)
+    ```
+
+* **Why this matters for AI systems:**
+  * Scope composition in multi-agent orchestration
+  * Dynamic capability discovery without rigid schemas
+  * Type-safe merging of resources from different sources
+
+**Build (commit 3.5) — coproducts + representables**
+
+* Add to `crates/core/src/cat.rs`:
+
+  ```rust
+  /// Coproduct of two objects in a category (if it exists)
+  pub struct Coproduct<A, B> {
+      pub sum: String,           // the coproduct object A + B
+      pub inj_left: String,      // injection A → A + B
+      pub inj_right: String,     // injection B → A + B
+  }
+
+  /// Scope: a collection of named objects (like agent scope)
+  #[derive(Clone, Debug)]
+  pub struct Scope {
+      objects: HashMap<String, TypeId>,
+  }
+
+  impl Scope {
+      pub fn new() -> Self { ... }
+      pub fn insert(&mut self, name: &str, ty: TypeId) { ... }
+
+      /// Merge two scopes (coproduct-style)
+      pub fn merge(&self, other: &Scope) -> Self {
+          let mut merged = self.clone();
+          for (k, v) in &other.objects {
+              merged.objects.insert(k.clone(), v.clone());
+          }
+          merged
+      }
+
+      /// List available "morphisms" (methods) — Yoneda-style discovery
+      pub fn available_methods(&self) -> Vec<String> {
+          self.objects.keys().cloned().collect()
+      }
+  }
+  ```
+
+* Tests:
+  * Scope merge combines all entries
+  * Merge is associative: (A ∪ B) ∪ C = A ∪ (B ∪ C)
+  * Empty scope is identity: A ∪ {} = A
 
 ---
 
