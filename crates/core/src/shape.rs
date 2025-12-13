@@ -33,7 +33,7 @@ impl fmt::Display for TypeId {
 pub struct Shape {
     /// The underlying data type
     pub ty: TypeId,
-    /// Dimension sizes (empty = scalar, [n] = vector, [m,n] = matrix, etc.)
+    /// Dimension sizes (empty = scalar, \[n\] = vector, \[m,n\] = matrix, etc.)
     pub dims: Vec<usize>,
 }
 
@@ -100,11 +100,16 @@ impl fmt::Display for Shape {
         if self.dims.is_empty() {
             write!(f, "{}[]", self.ty)
         } else {
-            write!(f, "{}[{}]", self.ty,
-                self.dims.iter()
+            write!(
+                f,
+                "{}[{}]",
+                self.ty,
+                self.dims
+                    .iter()
                     .map(|d| d.to_string())
                     .collect::<Vec<_>>()
-                    .join(", "))
+                    .join(", ")
+            )
         }
     }
 }

@@ -25,8 +25,8 @@ use std::hash::Hash;
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Morphism<O: Clone + Eq + Hash> {
     pub name: String,
-    pub dom: O,  // domain (source)
-    pub cod: O,  // codomain (target)
+    pub dom: O, // domain (source)
+    pub cod: O, // codomain (target)
 }
 
 impl<O: Clone + Eq + Hash + fmt::Display> fmt::Display for Morphism<O> {
@@ -69,11 +69,14 @@ impl<O: Clone + Eq + Hash + fmt::Display> FiniteCategory<O> {
         if !self.objects.contains(&obj) {
             // Create identity morphism for this object
             let id_name = format!("id_{}", obj);
-            self.morphisms.insert(id_name.clone(), Morphism {
-                name: id_name.clone(),
-                dom: obj.clone(),
-                cod: obj.clone(),
-            });
+            self.morphisms.insert(
+                id_name.clone(),
+                Morphism {
+                    name: id_name.clone(),
+                    dom: obj.clone(),
+                    cod: obj.clone(),
+                },
+            );
             self.identities.insert(obj.clone(), id_name);
             self.objects.push(obj);
         }
@@ -82,19 +85,33 @@ impl<O: Clone + Eq + Hash + fmt::Display> FiniteCategory<O> {
 
     /// Add a morphism to the category.
     pub fn add_morphism(&mut self, name: &str, dom: O, cod: O) -> &mut Self {
-        self.morphisms.insert(name.to_string(), Morphism {
-            name: name.to_string(),
-            dom,
-            cod,
-        });
+        self.morphisms.insert(
+            name.to_string(),
+            Morphism {
+                name: name.to_string(),
+                dom,
+                cod,
+            },
+        );
         self
     }
 
     /// Define a composition: f;g = h
     /// Returns error if cod(f) ≠ dom(g)
-    pub fn define_composition(&mut self, f: &str, g: &str, result: &str) -> Result<&mut Self, String> {
-        let f_mor = self.morphisms.get(f).ok_or(format!("Unknown morphism: {}", f))?;
-        let g_mor = self.morphisms.get(g).ok_or(format!("Unknown morphism: {}", g))?;
+    pub fn define_composition(
+        &mut self,
+        f: &str,
+        g: &str,
+        result: &str,
+    ) -> Result<&mut Self, String> {
+        let f_mor = self
+            .morphisms
+            .get(f)
+            .ok_or(format!("Unknown morphism: {}", f))?;
+        let g_mor = self
+            .morphisms
+            .get(g)
+            .ok_or(format!("Unknown morphism: {}", g))?;
 
         if f_mor.cod != g_mor.dom {
             return Err(format!(
@@ -103,7 +120,8 @@ impl<O: Clone + Eq + Hash + fmt::Display> FiniteCategory<O> {
             ));
         }
 
-        self.compositions.insert((f.to_string(), g.to_string()), result.to_string());
+        self.compositions
+            .insert((f.to_string(), g.to_string()), result.to_string());
         Ok(self)
     }
 
@@ -124,13 +142,15 @@ impl<O: Clone + Eq + Hash + fmt::Display> FiniteCategory<O> {
         }
 
         // Look up in composition table
-        self.compositions.get(&(f.to_string(), g.to_string()))
+        self.compositions
+            .get(&(f.to_string(), g.to_string()))
             .and_then(|h| self.morphisms.get(h))
     }
 
     /// Get identity morphism for an object.
     pub fn identity(&self, obj: &O) -> Option<&Morphism<O>> {
-        self.identities.get(obj)
+        self.identities
+            .get(obj)
             .and_then(|name| self.morphisms.get(name))
     }
 }
@@ -177,10 +197,12 @@ where
     // Check identity preservation: F(id_A) = id_{F(A)}
     for obj in &source.objects {
         let f_obj = functor.map_obj(obj);
-        let id_in_source = source.identity(obj)
+        let id_in_source = source
+            .identity(obj)
             .ok_or(format!("No identity for {} in source", obj))?;
         let mapped_id = functor.map_mor(&id_in_source.name);
-        let expected_id = target.identity(&f_obj)
+        let expected_id = target
+            .identity(&f_obj)
             .ok_or(format!("No identity for {} in target", f_obj))?;
 
         if mapped_id != expected_id.name {
@@ -224,8 +246,8 @@ impl<O: Clone + Eq + Hash + fmt::Display> OppositeCategory<O> {
     pub fn get_morphism(&self, name: &str) -> Option<Morphism<O>> {
         self.original.morphisms.get(name).map(|m| Morphism {
             name: format!("{}_op", m.name),
-            dom: m.cod.clone(),  // Reversed!
-            cod: m.dom.clone(),  // Reversed!
+            dom: m.cod.clone(), // Reversed!
+            cod: m.dom.clone(), // Reversed!
         })
     }
 
@@ -266,8 +288,8 @@ mod tests {
     fn test_finite_category_creation() {
         let mut cat: FiniteCategory<String> = FiniteCategory::new();
         cat.add_object("A".to_string())
-           .add_object("B".to_string())
-           .add_morphism("f", "A".to_string(), "B".to_string());
+            .add_object("B".to_string())
+            .add_morphism("f", "A".to_string(), "B".to_string());
 
         assert_eq!(cat.objects.len(), 2);
         assert!(cat.morphisms.contains_key("f"));
@@ -279,8 +301,8 @@ mod tests {
     fn test_identity_composition() {
         let mut cat: FiniteCategory<String> = FiniteCategory::new();
         cat.add_object("A".to_string())
-           .add_object("B".to_string())
-           .add_morphism("f", "A".to_string(), "B".to_string());
+            .add_object("B".to_string())
+            .add_morphism("f", "A".to_string(), "B".to_string());
 
         // id_A ; f = f
         let result = cat.compose("id_A", "f");
@@ -297,8 +319,8 @@ mod tests {
     fn test_opposite_category() {
         let mut cat: FiniteCategory<String> = FiniteCategory::new();
         cat.add_object("A".to_string())
-           .add_object("B".to_string())
-           .add_morphism("f", "A".to_string(), "B".to_string());
+            .add_object("B".to_string())
+            .add_morphism("f", "A".to_string(), "B".to_string());
 
         let op = OppositeCategory::new(cat);
 
@@ -313,11 +335,11 @@ mod tests {
     fn test_composition_order() {
         let mut cat: FiniteCategory<String> = FiniteCategory::new();
         cat.add_object("A".to_string())
-           .add_object("B".to_string())
-           .add_object("C".to_string())
-           .add_morphism("f", "A".to_string(), "B".to_string())
-           .add_morphism("g", "B".to_string(), "C".to_string())
-           .add_morphism("gf", "A".to_string(), "C".to_string());
+            .add_object("B".to_string())
+            .add_object("C".to_string())
+            .add_morphism("f", "A".to_string(), "B".to_string())
+            .add_morphism("g", "B".to_string(), "C".to_string())
+            .add_morphism("gf", "A".to_string(), "C".to_string());
 
         cat.define_composition("f", "g", "gf").unwrap();
 

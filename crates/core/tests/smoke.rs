@@ -7,9 +7,9 @@
 //!
 //! Session 1 completion criteria: `cargo test` passes.
 
-use compositional_core::{CoreError, Shape};
 use compositional_core::cat::{FiniteCategory, OppositeCategory};
 use compositional_core::diagram::{Diagram, Node, Port};
+use compositional_core::{CoreError, Shape};
 
 // ============================================================================
 // Shape Tests
@@ -114,8 +114,12 @@ fn smoke_diagram_connect() {
     let a = diagram.add_node(add);
 
     // Connect inputs to add node
-    diagram.connect(i1, 0, a, 0).expect("Connection should succeed");
-    diagram.connect(i2, 0, a, 1).expect("Connection should succeed");
+    diagram
+        .connect(i1, 0, a, 0)
+        .expect("Connection should succeed");
+    diagram
+        .connect(i2, 0, a, 1)
+        .expect("Connection should succeed");
 
     assert_eq!(diagram.edge_count(), 2);
 }
@@ -127,11 +131,11 @@ fn smoke_diagram_shape_mismatch() {
     let producer = Node::new(
         SimpleOp::Input,
         vec![],
-        vec![Port::new(Shape::f32_scalar())],  // produces scalar
+        vec![Port::new(Shape::f32_scalar())], // produces scalar
     );
     let consumer = Node::new(
         SimpleOp::Output,
-        vec![Port::new(Shape::f32_vector(10))],  // expects vector
+        vec![Port::new(Shape::f32_vector(10))], // expects vector
         vec![],
     );
 
@@ -151,10 +155,10 @@ fn smoke_category_creation() {
     let mut cat: FiniteCategory<String> = FiniteCategory::new();
 
     cat.add_object("A".to_string())
-       .add_object("B".to_string())
-       .add_object("C".to_string())
-       .add_morphism("f", "A".to_string(), "B".to_string())
-       .add_morphism("g", "B".to_string(), "C".to_string());
+        .add_object("B".to_string())
+        .add_object("C".to_string())
+        .add_morphism("f", "A".to_string(), "B".to_string())
+        .add_morphism("g", "B".to_string(), "C".to_string());
 
     assert_eq!(cat.objects.len(), 3);
     // 3 identities + 2 morphisms
@@ -166,8 +170,8 @@ fn smoke_category_identity_composition() {
     let mut cat: FiniteCategory<String> = FiniteCategory::new();
 
     cat.add_object("A".to_string())
-       .add_object("B".to_string())
-       .add_morphism("f", "A".to_string(), "B".to_string());
+        .add_object("B".to_string())
+        .add_morphism("f", "A".to_string(), "B".to_string());
 
     // id_A ; f = f
     let result = cat.compose("id_A", "f");
@@ -180,8 +184,8 @@ fn smoke_opposite_category() {
     let mut cat: FiniteCategory<String> = FiniteCategory::new();
 
     cat.add_object("A".to_string())
-       .add_object("B".to_string())
-       .add_morphism("f", "A".to_string(), "B".to_string());
+        .add_object("B".to_string())
+        .add_morphism("f", "A".to_string(), "B".to_string());
 
     let op = OppositeCategory::new(cat);
 
@@ -221,14 +225,29 @@ fn smoke_complete_pipeline() {
     // Build a tiny pipeline: two inputs → add → output
     let mut diagram: Diagram<SimpleOp> = Diagram::new();
 
-    let input1 = Node::new(SimpleOp::Input, vec![], vec![Port::new(Shape::f32_scalar())]);
-    let input2 = Node::new(SimpleOp::Input, vec![], vec![Port::new(Shape::f32_scalar())]);
-    let add = Node::new(
-        SimpleOp::Add,
-        vec![Port::new(Shape::f32_scalar()), Port::new(Shape::f32_scalar())],
+    let input1 = Node::new(
+        SimpleOp::Input,
+        vec![],
         vec![Port::new(Shape::f32_scalar())],
     );
-    let output = Node::new(SimpleOp::Output, vec![Port::new(Shape::f32_scalar())], vec![]);
+    let input2 = Node::new(
+        SimpleOp::Input,
+        vec![],
+        vec![Port::new(Shape::f32_scalar())],
+    );
+    let add = Node::new(
+        SimpleOp::Add,
+        vec![
+            Port::new(Shape::f32_scalar()),
+            Port::new(Shape::f32_scalar()),
+        ],
+        vec![Port::new(Shape::f32_scalar())],
+    );
+    let output = Node::new(
+        SimpleOp::Output,
+        vec![Port::new(Shape::f32_scalar())],
+        vec![],
+    );
 
     let i1 = diagram.add_node(input1);
     let i2 = diagram.add_node(input2);

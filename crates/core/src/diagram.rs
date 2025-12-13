@@ -53,7 +53,11 @@ pub struct Node<O> {
 
 impl<O> Node<O> {
     pub fn new(op: O, inputs: Vec<Port>, outputs: Vec<Port>) -> Self {
-        Self { op, inputs, outputs }
+        Self {
+            op,
+            inputs,
+            outputs,
+        }
     }
 
     /// Number of input ports
@@ -129,10 +133,12 @@ impl<O: Clone> Diagram<O> {
         to_port: usize,
     ) -> Result<(), CoreError> {
         // Validate port indices
-        let from_node_data = self.graph.node_weight(from_node)
-            .ok_or_else(|| CoreError::ValidationError {
-                reason: "Source node not found".to_string()
-            })?;
+        let from_node_data =
+            self.graph
+                .node_weight(from_node)
+                .ok_or_else(|| CoreError::ValidationError {
+                    reason: "Source node not found".to_string(),
+                })?;
 
         if from_port >= from_node_data.outputs.len() {
             return Err(CoreError::InvalidPort {
@@ -143,10 +149,12 @@ impl<O: Clone> Diagram<O> {
 
         let from_shape = from_node_data.outputs[from_port].shape.clone();
 
-        let to_node_data = self.graph.node_weight(to_node)
-            .ok_or_else(|| CoreError::ValidationError {
-                reason: "Target node not found".to_string()
-            })?;
+        let to_node_data =
+            self.graph
+                .node_weight(to_node)
+                .ok_or_else(|| CoreError::ValidationError {
+                    reason: "Target node not found".to_string(),
+                })?;
 
         if to_port >= to_node_data.inputs.len() {
             return Err(CoreError::InvalidPort {
@@ -166,7 +174,8 @@ impl<O: Clone> Diagram<O> {
         }
 
         // Add the edge
-        self.graph.add_edge(from_node, to_node, Edge::new(from_port, to_port));
+        self.graph
+            .add_edge(from_node, to_node, Edge::new(from_port, to_port));
         Ok(())
     }
 
@@ -182,9 +191,11 @@ impl<O: Clone> Diagram<O> {
 
     /// Get the shapes of all input boundary ports.
     pub fn input_shapes(&self) -> Vec<Shape> {
-        self.inputs.iter()
+        self.inputs
+            .iter()
             .filter_map(|(node_idx, port_idx)| {
-                self.graph.node_weight(*node_idx)
+                self.graph
+                    .node_weight(*node_idx)
                     .and_then(|n| n.inputs.get(*port_idx))
                     .map(|p| p.shape.clone())
             })
@@ -193,9 +204,11 @@ impl<O: Clone> Diagram<O> {
 
     /// Get the shapes of all output boundary ports.
     pub fn output_shapes(&self) -> Vec<Shape> {
-        self.outputs.iter()
+        self.outputs
+            .iter()
             .filter_map(|(node_idx, port_idx)| {
-                self.graph.node_weight(*node_idx)
+                self.graph
+                    .node_weight(*node_idx)
                     .and_then(|n| n.outputs.get(*port_idx))
                     .map(|p| p.shape.clone())
             })
@@ -210,24 +223,31 @@ impl<O: Clone> Diagram<O> {
     pub fn validate(&self) -> Result<(), CoreError> {
         // Check all edges have compatible shapes
         for edge_ref in self.graph.edge_references() {
-            let from_node = self.graph.node_weight(edge_ref.source())
-                .ok_or_else(|| CoreError::ValidationError {
-                    reason: "Edge source node not found".to_string()
-                })?;
-            let to_node = self.graph.node_weight(edge_ref.target())
-                .ok_or_else(|| CoreError::ValidationError {
-                    reason: "Edge target node not found".to_string()
-                })?;
+            let from_node = self.graph.node_weight(edge_ref.source()).ok_or_else(|| {
+                CoreError::ValidationError {
+                    reason: "Edge source node not found".to_string(),
+                }
+            })?;
+            let to_node = self.graph.node_weight(edge_ref.target()).ok_or_else(|| {
+                CoreError::ValidationError {
+                    reason: "Edge target node not found".to_string(),
+                }
+            })?;
 
             let edge = edge_ref.weight();
 
-            let from_shape = from_node.outputs.get(edge.from_port)
-                .ok_or(CoreError::InvalidPort {
-                    index: edge.from_port,
-                    count: from_node.outputs.len(),
-                })?;
+            let from_shape =
+                from_node
+                    .outputs
+                    .get(edge.from_port)
+                    .ok_or(CoreError::InvalidPort {
+                        index: edge.from_port,
+                        count: from_node.outputs.len(),
+                    })?;
 
-            let to_shape = to_node.inputs.get(edge.to_port)
+            let to_shape = to_node
+                .inputs
+                .get(edge.to_port)
                 .ok_or(CoreError::InvalidPort {
                     index: edge.to_port,
                     count: to_node.inputs.len(),
@@ -243,10 +263,12 @@ impl<O: Clone> Diagram<O> {
 
         // Check boundary ports exist
         for (node_idx, port_idx) in &self.inputs {
-            let node = self.graph.node_weight(*node_idx)
-                .ok_or_else(|| CoreError::ValidationError {
-                    reason: format!("Input boundary node {:?} not found", node_idx)
-                })?;
+            let node =
+                self.graph
+                    .node_weight(*node_idx)
+                    .ok_or_else(|| CoreError::ValidationError {
+                        reason: format!("Input boundary node {:?} not found", node_idx),
+                    })?;
             if *port_idx >= node.inputs.len() {
                 return Err(CoreError::InvalidPort {
                     index: *port_idx,
@@ -256,10 +278,12 @@ impl<O: Clone> Diagram<O> {
         }
 
         for (node_idx, port_idx) in &self.outputs {
-            let node = self.graph.node_weight(*node_idx)
-                .ok_or_else(|| CoreError::ValidationError {
-                    reason: format!("Output boundary node {:?} not found", node_idx)
-                })?;
+            let node =
+                self.graph
+                    .node_weight(*node_idx)
+                    .ok_or_else(|| CoreError::ValidationError {
+                        reason: format!("Output boundary node {:?} not found", node_idx),
+                    })?;
             if *port_idx >= node.outputs.len() {
                 return Err(CoreError::InvalidPort {
                     index: *port_idx,
@@ -290,7 +314,12 @@ impl<O: Clone> Default for Diagram<O> {
 
 impl<O: Clone + fmt::Debug> fmt::Display for Diagram<O> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "Diagram({} nodes, {} edges)", self.node_count(), self.edge_count())?;
+        writeln!(
+            f,
+            "Diagram({} nodes, {} edges)",
+            self.node_count(),
+            self.edge_count()
+        )?;
         writeln!(f, "  Inputs: {:?}", self.inputs)?;
         writeln!(f, "  Outputs: {:?}", self.outputs)?;
         Ok(())
@@ -339,13 +368,19 @@ mod tests {
 
         let node1 = Node::new(
             TestOp::Add,
-            vec![Port::new(Shape::f32_scalar()), Port::new(Shape::f32_scalar())],
+            vec![
+                Port::new(Shape::f32_scalar()),
+                Port::new(Shape::f32_scalar()),
+            ],
             vec![Port::new(Shape::f32_scalar())],
         );
 
         let node2 = Node::new(
             TestOp::Mul,
-            vec![Port::new(Shape::f32_scalar()), Port::new(Shape::f32_scalar())],
+            vec![
+                Port::new(Shape::f32_scalar()),
+                Port::new(Shape::f32_scalar()),
+            ],
             vec![Port::new(Shape::f32_scalar())],
         );
 
@@ -365,12 +400,12 @@ mod tests {
         let node1 = Node::new(
             TestOp::Add,
             vec![],
-            vec![Port::new(Shape::f32_scalar())],  // outputs scalar
+            vec![Port::new(Shape::f32_scalar())], // outputs scalar
         );
 
         let node2 = Node::new(
             TestOp::Mul,
-            vec![Port::new(Shape::f32_vector(10))],  // expects vector
+            vec![Port::new(Shape::f32_vector(10))], // expects vector
             vec![],
         );
 
