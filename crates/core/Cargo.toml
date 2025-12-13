@@ -1,0 +1,13 @@
+[package]
+name = "compositional-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Core abstractions for compositional AI: shapes, diagrams, and categorical foundations"
+
+[dependencies]
+thiserror.workspace = true
+petgraph.workspace = true
+
+[dev-dependencies]

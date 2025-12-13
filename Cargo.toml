@@ -1,0 +1,24 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/core",
+    # Future crates:
+    # "crates/diff",
+    # "crates/prob",
+    # "crates/nlp",
+    # "crates/games",
+    # "crates/operads",
+    # "demos",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Compositional AI Lab"]
+license = "MIT"
+
+[workspace.dependencies]
+# Core dependencies used across crates
+thiserror = "1.0"
+petgraph = "0.6"
+ndarray = "0.15"
