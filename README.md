@@ -4,7 +4,7 @@ A Rust-based course exploring category theory foundations for AI/ML systems.
 
 ## What This Is
 
-An educational 20-session curriculum that builds practical Rust infrastructure while learning categorical abstractions. Each session = one commit, with readings, implementation tasks, and tests.
+**This is currently a personal learning project.** A 20-session curriculum I'm working through to build practical Rust infrastructure while learning categorical abstractions. Each session = one commit, with readings, implementation tasks, and tests.
 
 **Topics covered:**
 - Diagrams & string diagrams (computation graphs as first-class values)
@@ -42,11 +42,11 @@ just ci
 just session1
 ```
 
-See `course.md` for the full curriculum.
+See `course.md` for the full curriculum (created with GPT 5.2, refined with Claude).
 
 ## Roadmap
 
-This may evolve into a [Rustlings](https://github.com/rust-lang/rustlings)-style interactive platform for learning category theory × AI.
+This is a personal learning repo for now. It may eventually evolve into a [Rustlings](https://github.com/rust-lang/rustlings)-style interactive platform for learning category theory × AI — but no promises.
 
 ## License
 
