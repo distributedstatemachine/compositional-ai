@@ -7,6 +7,7 @@
 //! - **Categories**: Finite categories and functors (Session 3)
 //! - **Diagrams**: String diagram data structures for wiring computations (Session 4)
 //! - **Parallel**: Runtime tensor product for concurrent agent execution (Session 5)
+//! - **Tracing**: Zero-cost compile-time configurable tracing (Session 6)
 //! - **Capabilities**: Yoneda-style extensible scope system (Session 3.6)
 //!
 //! ## Design Philosophy
@@ -21,6 +22,7 @@ pub mod diagram;
 pub mod error;
 pub mod parallel;
 pub mod shape;
+pub mod tracing;
 
 // Re-export key types at crate root for convenience
 pub use capability::{Capability, CapabilityError, CapabilityScope, Handles, Request};
@@ -29,3 +31,4 @@ pub use diagram::{Diagram, Node, Port};
 pub use error::CoreError;
 pub use parallel::{Agent, Combiner, ParallelAgents};
 pub use shape::{Shape, TypeId};
+pub use tracing::{Computation, ComputationExt, TraceNode, Traced};

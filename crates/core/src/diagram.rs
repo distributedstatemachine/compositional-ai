@@ -641,6 +641,168 @@ impl<O: Clone + fmt::Debug> fmt::Display for Diagram<O> {
     }
 }
 
+// ============================================================================
+// Session 6: Rendering
+// ============================================================================
+
+impl<O: Clone + fmt::Debug> Diagram<O> {
+    /// Render the diagram as ASCII text for terminal inspection.
+    ///
+    /// Shows nodes with their operations and port shapes, plus edges.
+    ///
+    /// # Example Output
+    ///
+    /// ```text
+    /// Diagram: 3 nodes, 2 edges
+    /// Inputs: [(NodeIndex(0), 0), (NodeIndex(1), 0)]
+    /// Outputs: [(NodeIndex(2), 0)]
+    ///
+    /// Nodes:
+    ///   [0] Add
+    ///       in[0]: f32[]
+    ///       in[1]: f32[]
+    ///       out[0]: f32[]
+    ///
+    /// Edges:
+    ///   0:0 -> 2:0
+    ///   1:0 -> 2:1
+    /// ```
+    pub fn render_ascii(&self) -> String {
+        use std::fmt::Write;
+        let mut out = String::new();
+
+        // Header
+        writeln!(
+            out,
+            "Diagram: {} nodes, {} edges",
+            self.node_count(),
+            self.edge_count()
+        )
+        .unwrap();
+        writeln!(out, "Inputs: {:?}", self.inputs).unwrap();
+        writeln!(out, "Outputs: {:?}", self.outputs).unwrap();
+        writeln!(out).unwrap();
+
+        // Nodes
+        writeln!(out, "Nodes:").unwrap();
+        for idx in self.graph.node_indices() {
+            let node = self.graph.node_weight(idx).unwrap();
+            writeln!(out, "  [{}] {:?}", idx.index(), node.op).unwrap();
+            for (i, port) in node.inputs.iter().enumerate() {
+                writeln!(out, "      in[{}]: {}", i, port.shape).unwrap();
+            }
+            for (i, port) in node.outputs.iter().enumerate() {
+                writeln!(out, "      out[{}]: {}", i, port.shape).unwrap();
+            }
+            writeln!(out).unwrap();
+        }
+
+        // Edges
+        writeln!(out, "Edges:").unwrap();
+        for edge in self.graph.edge_references() {
+            let e = edge.weight();
+            writeln!(
+                out,
+                "  {}:{} -> {}:{}",
+                edge.source().index(),
+                e.from_port,
+                edge.target().index(),
+                e.to_port
+            )
+            .unwrap();
+        }
+
+        out
+    }
+
+    /// Export the diagram as Graphviz DOT format.
+    ///
+    /// The output can be rendered with Graphviz tools:
+    /// ```bash
+    /// dot -Tsvg diagram.dot -o diagram.svg
+    /// dot -Tpng diagram.dot -o diagram.png
+    /// ```
+    ///
+    /// # Features
+    ///
+    /// - Left-to-right layout (matches string diagram convention)
+    /// - Input boundary nodes highlighted in light blue
+    /// - Output boundary nodes highlighted in light green
+    /// - Edge labels show port connections
+    pub fn to_dot(&self) -> String {
+        use std::fmt::Write;
+        let mut out = String::new();
+
+        writeln!(out, "digraph {{").unwrap();
+        writeln!(out, "  rankdir=LR;").unwrap();
+        writeln!(out, "  node [shape=box, fontname=\"monospace\"];").unwrap();
+        writeln!(out, "  edge [fontname=\"monospace\", fontsize=10];").unwrap();
+        writeln!(out).unwrap();
+
+        // Collect boundary node indices for styling
+        let input_nodes: std::collections::HashSet<_> =
+            self.inputs.iter().map(|(idx, _)| *idx).collect();
+        let output_nodes: std::collections::HashSet<_> =
+            self.outputs.iter().map(|(idx, _)| *idx).collect();
+
+        // Nodes
+        for idx in self.graph.node_indices() {
+            let node = self.graph.node_weight(idx).unwrap();
+
+            // Build label with op name and port info
+            let mut label = format!("{:?}", node.op);
+            if !node.inputs.is_empty() || !node.outputs.is_empty() {
+                label.push_str("\\n");
+                if !node.inputs.is_empty() {
+                    label.push_str(&format!("in: {}", node.inputs.len()));
+                }
+                if !node.inputs.is_empty() && !node.outputs.is_empty() {
+                    label.push_str(" | ");
+                }
+                if !node.outputs.is_empty() {
+                    label.push_str(&format!("out: {}", node.outputs.len()));
+                }
+            }
+
+            // Determine style based on boundary membership
+            let style = if input_nodes.contains(&idx) && output_nodes.contains(&idx) {
+                "style=filled, fillcolor=\"#90EE90:#ADD8E6\""
+            } else if input_nodes.contains(&idx) {
+                "style=filled, fillcolor=lightblue"
+            } else if output_nodes.contains(&idx) {
+                "style=filled, fillcolor=lightgreen"
+            } else {
+                ""
+            };
+
+            if style.is_empty() {
+                writeln!(out, "  n{} [label=\"{}\"];", idx.index(), label).unwrap();
+            } else {
+                writeln!(out, "  n{} [label=\"{}\", {}];", idx.index(), label, style).unwrap();
+            }
+        }
+
+        writeln!(out).unwrap();
+
+        // Edges
+        for edge in self.graph.edge_references() {
+            let e = edge.weight();
+            writeln!(
+                out,
+                "  n{} -> n{} [label=\"{}→{}\"];",
+                edge.source().index(),
+                edge.target().index(),
+                e.from_port,
+                e.to_port
+            )
+            .unwrap();
+        }
+
+        writeln!(out, "}}").unwrap();
+        out
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1067,5 +1229,110 @@ mod tests {
         assert_eq!(left.input_shapes(), right.input_shapes());
         assert_eq!(left.output_shapes(), right.output_shapes());
         assert_eq!(left.node_count(), right.node_count()); // 4 nodes each
+    }
+
+    // ========================================================================
+    // Session 6: Rendering Tests
+    // ========================================================================
+
+    #[test]
+    fn test_render_ascii_basic() {
+        let diagram = Diagram::from_node(Node::new(
+            TestOp::Add,
+            vec![
+                Port::new(Shape::f32_scalar()),
+                Port::new(Shape::f32_scalar()),
+            ],
+            vec![Port::new(Shape::f32_scalar())],
+        ));
+
+        let ascii = diagram.render_ascii();
+
+        assert!(ascii.contains("Diagram: 1 nodes, 0 edges"));
+        assert!(ascii.contains("Add"));
+        assert!(ascii.contains("in[0]"));
+        assert!(ascii.contains("in[1]"));
+        assert!(ascii.contains("out[0]"));
+    }
+
+    #[test]
+    fn test_render_ascii_with_edges() {
+        let mut diagram: Diagram<TestOp> = Diagram::new();
+
+        let n1 = diagram.add_node(Node::new(
+            TestOp::Add,
+            vec![Port::new(Shape::f32_scalar())],
+            vec![Port::new(Shape::f32_scalar())],
+        ));
+        let n2 = diagram.add_node(Node::new(
+            TestOp::Mul,
+            vec![Port::new(Shape::f32_scalar())],
+            vec![Port::new(Shape::f32_scalar())],
+        ));
+
+        diagram.connect(n1, 0, n2, 0).unwrap();
+        diagram.set_inputs(vec![(n1, 0)]);
+        diagram.set_outputs(vec![(n2, 0)]);
+
+        let ascii = diagram.render_ascii();
+
+        assert!(ascii.contains("2 nodes"));
+        assert!(ascii.contains("1 edges"));
+        assert!(ascii.contains("0:0 -> 1:0"));
+    }
+
+    #[test]
+    fn test_to_dot_basic() {
+        let diagram = Diagram::from_node(Node::new(
+            TestOp::Add,
+            vec![Port::new(Shape::f32_scalar())],
+            vec![Port::new(Shape::f32_scalar())],
+        ));
+
+        let dot = diagram.to_dot();
+
+        assert!(dot.contains("digraph {"));
+        assert!(dot.contains("rankdir=LR"));
+        assert!(dot.contains("n0"));
+        assert!(dot.contains("Add"));
+        assert!(dot.contains("}"));
+    }
+
+    #[test]
+    fn test_to_dot_with_edges() {
+        let mut diagram: Diagram<TestOp> = Diagram::new();
+
+        let n1 = diagram.add_node(Node::new(
+            TestOp::Add,
+            vec![],
+            vec![Port::new(Shape::f32_scalar())],
+        ));
+        let n2 = diagram.add_node(Node::new(
+            TestOp::Mul,
+            vec![Port::new(Shape::f32_scalar())],
+            vec![],
+        ));
+
+        diagram.connect(n1, 0, n2, 0).unwrap();
+
+        let dot = diagram.to_dot();
+
+        assert!(dot.contains("n0 -> n1"));
+        assert!(dot.contains("0→0")); // Edge label
+    }
+
+    #[test]
+    fn test_to_dot_boundary_highlighting() {
+        let diagram = Diagram::from_node(Node::new(
+            TestOp::Add,
+            vec![Port::new(Shape::f32_scalar())],
+            vec![Port::new(Shape::f32_scalar())],
+        ));
+
+        let dot = diagram.to_dot();
+
+        // Single node that is both input and output boundary
+        // Should have special styling (gradient or combined)
+        assert!(dot.contains("fillcolor"));
     }
 }
