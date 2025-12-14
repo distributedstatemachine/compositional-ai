@@ -20,6 +20,7 @@ pub mod capability;
 pub mod cat;
 pub mod diagram;
 pub mod error;
+pub mod operad;
 pub mod parallel;
 pub mod shape;
 pub mod tracing;
@@ -29,6 +30,7 @@ pub use capability::{Capability, CapabilityError, CapabilityScope, Handles, Requ
 pub use cat::{Coproduct, Scope};
 pub use diagram::{Diagram, Node, Port};
 pub use error::CoreError;
+pub use operad::{OperadError, OperadOp, Operation, WiringPlan};
 pub use parallel::{Agent, Combiner, ParallelAgents};
 pub use shape::{Shape, TypeId};
 pub use tracing::{Computation, ComputationExt, TraceNode, Traced};
