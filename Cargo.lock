@@ -16,6 +16,7 @@ name = "compositional-diff"
 version = "0.1.0"
 dependencies = [
  "compositional-core",
+ "petgraph",
 ]
 
 [[package]]
