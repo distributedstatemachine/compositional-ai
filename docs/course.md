@@ -24,7 +24,7 @@ Session 3: Category theory core (FiniteCategory, Functor)
      ↓
 Session 3.5 (Optional): Coproducts + Yoneda (scope merging, dynamic discovery)
      ↓
-Session 3.6: Trait-Based Capabilities (Rust-native scope) ← NEW
+Session 3.6: Yoneda-Style Capabilities (extensible scope) ← NEW
      ↓
 Session 4-5: Diagrams + monoidal composition
      ↓
@@ -55,7 +55,7 @@ Sessions 7-10      Sessions 11-14    Sessions 15-16  │
 ```
 
 **Rust-Native Sessions (from docs/):**
-- **Session 3.6:** Trait-based capabilities replace Python's `Dict[str, Any]` scope
+- **Session 3.6:** Yoneda-style capabilities — extensible scope via Request/Response pattern
 - **Session 6:** Zero-cost tracing via const generics (debug vs release)
 - **Session 7:** Const generic shapes for compile-time dimension checking
 - **Session 18.5:** Lifetime-scoped agents + `Send + Sync` parallel safety
@@ -257,110 +257,268 @@ Sessions 7-10      Sessions 11-14    Sessions 15-16  │
 
 ---
 
-## Session 3.6 — Trait-Based Capabilities (Rust-Native Scope)
+## Session 3.6 — Yoneda-Style Capabilities (Extensible Scope)
 
 **Reading**
 
+* Leinster, *Basic Category Theory*: Yoneda lemma sections (Ch 4)
 * Review `docs/rust-native-agents.md` sections on trait-based capabilities
-* Rust book: Trait objects vs static dispatch
+* Rust book: Trait objects, `Any`, and downcasting
 
 **Lesson**
 
-* **Why traits beat `Dict[str, Any]` scope:**
-  * Python Agentica: `scope = {"db": db, "cache": cache}` — runtime discovery, no compile-time guarantees
-  * Rust: trait bounds declare required capabilities at compile time
-  * Missing capabilities are compile errors, not runtime `KeyError`
-
-* **Capability traits pattern:**
+* **The problem with hardcoded traits:**
   ```rust
-  trait HasDatabase {
-      type DB: Database;
-      fn db(&self) -> &Self::DB;
+  // Must enumerate ALL possible capabilities upfront
+  trait HasDatabase { ... }
+  trait HasCache { ... }
+  trait HasLLM { ... }
+  // What about HasVectorDB? HasMetrics? HasAuth? → Endless proliferation
+  ```
+
+* **Yoneda's insight:** An object is fully characterized by the morphisms into it.
+  Applied to capabilities: **A capability is defined by what operations it supports, not by a name.**
+
+* **The Yoneda-style pattern:**
+  ```rust
+  // Instead of naming capabilities, define them by their REQUEST/RESPONSE behavior
+
+  /// A request defines what you want and what you get back
+  trait Request: Send + 'static {
+      type Response: Send + 'static;
   }
 
-  trait HasCache {
-      type Cache: Cache;
-      fn cache(&self) -> &Self::Cache;
+  /// A capability can handle certain request types
+  trait Capability: Send + Sync {
+      fn type_id(&self) -> std::any::TypeId;
   }
 
-  trait HasLLM {
-      type LLM: LanguageModel;
-      fn llm(&self) -> &Self::LLM;
+  /// The key trait: "this capability handles requests of type R"
+  trait Handles<R: Request>: Capability {
+      fn handle(&self, req: R) -> Result<R::Response, CapabilityError>;
   }
   ```
 
-* **Agent functions declare requirements via bounds:**
+* **Why this is Yoneda:**
+  * Yoneda: Hom(−, X) determines X (all morphisms INTO X)
+  * Here: A capability is determined by all Request types it can Handle
+  * You don't ask "is this a Database?" — you ask "can this handle QueryRequest?"
+
+* **Extensibility without modification:**
   ```rust
-  async fn research_agent<S>(scope: &S, query: &str) -> Result<Report, AgentError>
-  where
-      S: HasDatabase + HasCache + HasLLM,  // Compile-time requirement
-  {
-      scope.db().query(...).await?;  // Guaranteed to exist
-      scope.cache().get(...).await?;
-      scope.llm().summarize(...).await?
+  // Anyone can define new request types — no changes to core!
+
+  struct SqlQuery { sql: String }
+  impl Request for SqlQuery {
+      type Response = Vec<Row>;
+  }
+
+  struct CacheGet { key: String }
+  impl Request for CacheGet {
+      type Response = Option<String>;
+  }
+
+  struct LlmComplete { prompt: String, max_tokens: usize }
+  impl Request for LlmComplete {
+      type Response = String;
+  }
+
+  // New capability? Just define the request type:
+  struct VectorSearch { embedding: Vec<f32>, top_k: usize }
+  impl Request for VectorSearch {
+      type Response = Vec<(DocId, f32)>;  // (id, similarity)
+  }
+  // No HasVectorDB trait needed!
+  ```
+
+* **The Scope as a capability registry:**
+  ```rust
+  struct Scope {
+      capabilities: HashMap<TypeId, Box<dyn Any + Send + Sync>>,
+  }
+
+  impl Scope {
+      /// Register a capability
+      fn register<C: Capability + 'static>(&mut self, cap: C) {
+          self.capabilities.insert(TypeId::of::<C>(), Box::new(cap));
+      }
+
+      /// Yoneda-style discovery: what can handle this request?
+      fn dispatch<R: Request>(&self, req: R) -> Result<R::Response, CapabilityError>
+      where
+          // Find capability that handles R
+      { ... }
   }
   ```
 
-* **Comparison to Session 3.5's `Scope`:**
-  * `Scope` (3.5): runtime dict, flexible but unchecked
-  * Capability traits (3.6): compile-time bounds, rigid but safe
-  * Both are valid — choose based on dynamism requirements
+* **Comparison of approaches:**
 
-**Build (commit 3.6) — capability traits**
+  | Approach | Compile-time safety | Extensibility | Use when |
+  |----------|---------------------|---------------|----------|
+  | `Scope` (3.5) | ✗ None | ✓ Fully dynamic | Prototyping, scripts |
+  | Hardcoded traits | ✓ Full | ✗ Must modify code | Closed set of capabilities |
+  | **Yoneda-style** | ✓ Response types | ✓ Open extension | Production systems |
+
+**Build (commit 3.6) — Yoneda-style capabilities**
 
 * Add `crates/core/src/capability.rs`
 * Implement:
 
   ```rust
-  /// Marker trait for scopes with database access
-  pub trait HasDatabase {
-      fn db(&self) -> &dyn Database;
+  use std::any::{Any, TypeId};
+  use std::collections::HashMap;
+  use std::marker::PhantomData;
+
+  /// Error when a capability can't handle a request
+  #[derive(Debug, Clone)]
+  pub enum CapabilityError {
+      NotFound { request_type: &'static str },
+      HandlerFailed { message: String },
   }
 
-  /// Marker trait for scopes with cache access
-  pub trait HasCache {
-      fn cache(&self) -> &dyn Cache;
+  /// A request defines an operation and its response type.
+  /// This is the "morphism" in the Yoneda sense.
+  pub trait Request: Send + 'static {
+      type Response: Send + 'static;
+
+      /// Human-readable name for error messages
+      fn name() -> &'static str;
   }
 
-  /// Marker trait for scopes with LLM access
-  pub trait HasLLM {
-      fn llm(&self) -> &dyn LanguageModel;
+  /// Marker trait for capabilities (objects that handle requests)
+  pub trait Capability: Send + Sync + 'static {
+      fn capability_name(&self) -> &'static str;
   }
 
-  /// Minimal trait definitions for demo
-  pub trait Database: Send + Sync {
-      fn query(&self, q: &str) -> String;
+  /// A capability that can handle requests of type R.
+  /// "Handles<R>" = "has a morphism from R into this capability"
+  pub trait Handles<R: Request>: Capability {
+      fn handle(&self, req: R) -> Result<R::Response, CapabilityError>;
   }
 
-  pub trait Cache: Send + Sync {
-      fn get(&self, key: &str) -> Option<String>;
-      fn set(&self, key: &str, value: &str);
+  // ============================================================
+  // Example Request Types (extensible by users)
+  // ============================================================
+
+  /// Database query request
+  pub struct SqlQuery(pub String);
+  impl Request for SqlQuery {
+      type Response = Vec<String>;  // Simplified: rows as strings
+      fn name() -> &'static str { "SqlQuery" }
   }
 
-  pub trait LanguageModel: Send + Sync {
-      fn complete(&self, prompt: &str) -> String;
+  /// Cache get request
+  pub struct CacheGet(pub String);
+  impl Request for CacheGet {
+      type Response = Option<String>;
+      fn name() -> &'static str { "CacheGet" }
   }
 
-  /// Combine two scopes — traits compose via multiple bounds
-  pub struct CombinedScope<A, B> {
-      pub a: A,
-      pub b: B,
+  /// Cache set request
+  pub struct CacheSet { pub key: String, pub value: String }
+  impl Request for CacheSet {
+      type Response = ();
+      fn name() -> &'static str { "CacheSet" }
   }
 
-  impl<A: HasDatabase, B> HasDatabase for CombinedScope<A, B> {
-      fn db(&self) -> &dyn Database { self.a.db() }
+  /// LLM completion request
+  pub struct LlmComplete { pub prompt: String, pub max_tokens: usize }
+  impl Request for LlmComplete {
+      type Response = String;
+      fn name() -> &'static str { "LlmComplete" }
   }
 
-  impl<A, B: HasCache> HasCache for CombinedScope<A, B> {
-      fn cache(&self) -> &dyn Cache { self.b.cache() }
+  // ============================================================
+  // Capability Registry (Yoneda-style Scope)
+  // ============================================================
+
+  /// Type-erased handler for dynamic dispatch
+  trait AnyHandler: Send + Sync {
+      fn handle_any(&self, req: Box<dyn Any + Send>) -> Result<Box<dyn Any + Send>, CapabilityError>;
+  }
+
+  /// Wrapper to make Handles<R> into AnyHandler
+  struct HandlerWrapper<C, R> {
+      capability: C,
+      _phantom: PhantomData<R>,
+  }
+
+  impl<C, R> AnyHandler for HandlerWrapper<C, R>
+  where
+      C: Handles<R>,
+      R: Request,
+  {
+      fn handle_any(&self, req: Box<dyn Any + Send>) -> Result<Box<dyn Any + Send>, CapabilityError> {
+          let req = req.downcast::<R>()
+              .map_err(|_| CapabilityError::HandlerFailed {
+                  message: "Request type mismatch".into()
+              })?;
+          let response = self.capability.handle(*req)?;
+          Ok(Box::new(response))
+      }
+  }
+
+  /// The capability registry — stores handlers by request TypeId
+  #[derive(Default)]
+  pub struct CapabilityScope {
+      handlers: HashMap<TypeId, Box<dyn AnyHandler>>,
+  }
+
+  impl CapabilityScope {
+      pub fn new() -> Self {
+          Self { handlers: HashMap::new() }
+      }
+
+      /// Register a capability for a specific request type
+      pub fn register<C, R>(&mut self, capability: C)
+      where
+          C: Handles<R> + Clone + 'static,
+          R: Request,
+      {
+          let wrapper = HandlerWrapper {
+              capability,
+              _phantom: PhantomData::<R>,
+          };
+          self.handlers.insert(TypeId::of::<R>(), Box::new(wrapper));
+      }
+
+      /// Check if a request type can be handled (Yoneda: "is there a morphism?")
+      pub fn can_handle<R: Request>(&self) -> bool {
+          self.handlers.contains_key(&TypeId::of::<R>())
+      }
+
+      /// Dispatch a request to its handler
+      pub fn dispatch<R: Request>(&self, req: R) -> Result<R::Response, CapabilityError> {
+          let handler = self.handlers
+              .get(&TypeId::of::<R>())
+              .ok_or(CapabilityError::NotFound { request_type: R::name() })?;
+
+          let response = handler.handle_any(Box::new(req))?;
+
+          response.downcast::<R::Response>()
+              .map(|b| *b)
+              .map_err(|_| CapabilityError::HandlerFailed {
+                  message: "Response type mismatch".into()
+              })
+      }
+
+      /// Merge two scopes (coproduct-style, other wins on conflict)
+      pub fn merge(mut self, other: Self) -> Self {
+          for (k, v) in other.handlers {
+              self.handlers.insert(k, v);
+          }
+          self
+      }
   }
   ```
 
 * Tests:
-  * Agent with `S: HasDatabase` compiles when scope implements `HasDatabase`
-  * Agent with `S: HasDatabase + HasLLM` fails to compile with scope missing `HasLLM`
-  * `CombinedScope` correctly delegates to inner scopes
-  * Capability bounds are `Send + Sync` safe for async contexts
+  * `dispatch` returns correct response type for registered capability
+  * `dispatch` returns `NotFound` for unregistered request type
+  * `can_handle` correctly reflects registered capabilities
+  * New request types work without modifying core (extensibility test)
+  * `merge` combines handlers from both scopes
+  * Handlers are `Send + Sync` (async-safe)
 
 ---
 
@@ -1565,73 +1723,249 @@ pub use trace::{AgentTrace, TraceNode, TracedAgent};
 pub use orchestrator::{Orchestrator, OrchestratorConfig};
 ```
 
-### Part 2: Capability-Based Scope (from Session 3.6)
+### Part 2: Yoneda-Style Capability Scope (from Session 3.6)
 
 ```rust
 // crates/agents/src/scope.rs
+//
+// Yoneda-style capabilities: extensible without modifying core code.
+// A capability is defined by what requests it handles, not by a name.
 
+use std::any::{Any, TypeId};
+use std::collections::HashMap;
+use std::marker::PhantomData;
 use std::sync::Arc;
 
-/// Capability traits — compile-time requirements
-pub trait HasDatabase: Send + Sync {
-    fn db(&self) -> &dyn Database;
+/// Error when a capability can't handle a request
+#[derive(Debug, Clone)]
+pub enum CapabilityError {
+    NotFound { request_type: &'static str },
+    HandlerFailed { message: String },
 }
 
-pub trait HasCache: Send + Sync {
-    fn cache(&self) -> &dyn Cache;
+// ============================================================
+// Core Traits: Request/Response Pattern (Yoneda-style)
+// ============================================================
+
+/// A request defines an operation and its response type.
+/// This is the "morphism" in the Yoneda sense — capabilities are
+/// characterized by which requests they can handle.
+pub trait Request: Send + 'static {
+    type Response: Send + 'static;
+    fn name() -> &'static str;
 }
 
-pub trait HasLLM: Send + Sync {
-    fn llm(&self) -> &dyn LLMClient;
+/// Marker trait for capabilities
+pub trait Capability: Send + Sync + 'static {
+    fn capability_name(&self) -> &'static str;
 }
 
-/// Database abstraction
-pub trait Database: Send + Sync {
-    fn query(&self, sql: &str) -> Result<Vec<Row>, DbError>;
-    fn execute(&self, sql: &str) -> Result<usize, DbError>;
+/// A capability that handles requests of type R.
+/// "Handles<R>" = "has a morphism from R into this capability"
+pub trait Handles<R: Request>: Capability {
+    fn handle(&self, req: R) -> Result<R::Response, CapabilityError>;
 }
 
-/// Cache abstraction
-pub trait Cache: Send + Sync {
-    fn get(&self, key: &str) -> Option<String>;
-    fn set(&self, key: &str, value: &str, ttl_secs: u64);
+// ============================================================
+// Built-in Request Types (users can add more without modifying core!)
+// ============================================================
+
+/// Database query
+pub struct DbQuery(pub String);
+impl Request for DbQuery {
+    type Response = Vec<String>;
+    fn name() -> &'static str { "DbQuery" }
 }
 
-/// Scope composition — combine capabilities from multiple sources
-pub struct CombinedScope<A, B> {
-    pub a: A,
-    pub b: B,
+/// Cache get
+pub struct CacheGet(pub String);
+impl Request for CacheGet {
+    type Response = Option<String>;
+    fn name() -> &'static str { "CacheGet" }
 }
 
-impl<A: HasDatabase, B> HasDatabase for CombinedScope<A, B> {
-    fn db(&self) -> &dyn Database { self.a.db() }
+/// Cache set
+pub struct CacheSet { pub key: String, pub value: String, pub ttl_secs: u64 }
+impl Request for CacheSet {
+    type Response = ();
+    fn name() -> &'static str { "CacheSet" }
 }
 
-impl<A, B: HasCache> HasCache for CombinedScope<A, B> {
-    fn cache(&self) -> &dyn Cache { self.b.cache() }
+/// LLM completion
+pub struct LlmComplete { pub prompt: String, pub max_tokens: usize }
+impl Request for LlmComplete {
+    type Response = String;
+    fn name() -> &'static str { "LlmComplete" }
 }
 
-impl<A, B: HasLLM> HasLLM for CombinedScope<A, B> {
-    fn llm(&self) -> &dyn LLMClient { self.b.llm() }
+/// Tool invocation (for agent tool calls)
+pub struct ToolInvoke { pub tool_name: String, pub args: serde_json::Value }
+impl Request for ToolInvoke {
+    type Response = serde_json::Value;
+    fn name() -> &'static str { "ToolInvoke" }
 }
 
-/// Production scope with all capabilities
-pub struct ProductionScope {
-    db: Arc<dyn Database>,
-    cache: Arc<dyn Cache>,
-    llm: Arc<dyn LLMClient>,
+// ============================================================
+// Type-erased handler infrastructure
+// ============================================================
+
+trait AnyHandler: Send + Sync {
+    fn handle_any(&self, req: Box<dyn Any + Send>) -> Result<Box<dyn Any + Send>, CapabilityError>;
 }
 
-impl HasDatabase for ProductionScope {
-    fn db(&self) -> &dyn Database { &*self.db }
+struct HandlerWrapper<C, R> {
+    capability: Arc<C>,
+    _phantom: PhantomData<R>,
 }
 
-impl HasCache for ProductionScope {
-    fn cache(&self) -> &dyn Cache { &*self.cache }
+impl<C, R> AnyHandler for HandlerWrapper<C, R>
+where
+    C: Handles<R> + 'static,
+    R: Request,
+{
+    fn handle_any(&self, req: Box<dyn Any + Send>) -> Result<Box<dyn Any + Send>, CapabilityError> {
+        let req = req.downcast::<R>()
+            .map_err(|_| CapabilityError::HandlerFailed {
+                message: "Request type mismatch".into()
+            })?;
+        let response = self.capability.handle(*req)?;
+        Ok(Box::new(response))
+    }
 }
 
-impl HasLLM for ProductionScope {
-    fn llm(&self) -> &dyn LLMClient { &*self.llm }
+// ============================================================
+// CapabilityScope: The Yoneda-style registry
+// ============================================================
+
+/// Dynamic capability registry using Yoneda-style discovery.
+///
+/// Instead of hardcoded `HasDatabase`, `HasCache` traits, capabilities
+/// are registered by the Request types they handle. This allows:
+/// - Adding new capabilities without modifying core
+/// - Runtime capability discovery
+/// - Type-safe responses (Response type is known at compile time)
+#[derive(Default)]
+pub struct CapabilityScope {
+    handlers: HashMap<TypeId, Box<dyn AnyHandler>>,
+}
+
+impl CapabilityScope {
+    pub fn new() -> Self {
+        Self { handlers: HashMap::new() }
+    }
+
+    /// Register a capability for a specific request type
+    pub fn register<C, R>(&mut self, capability: Arc<C>)
+    where
+        C: Handles<R> + 'static,
+        R: Request,
+    {
+        let wrapper = HandlerWrapper {
+            capability,
+            _phantom: PhantomData::<R>,
+        };
+        self.handlers.insert(TypeId::of::<R>(), Box::new(wrapper));
+    }
+
+    /// Yoneda-style discovery: can this scope handle request R?
+    pub fn can_handle<R: Request>(&self) -> bool {
+        self.handlers.contains_key(&TypeId::of::<R>())
+    }
+
+    /// Dispatch a request — finds the handler and invokes it
+    pub fn dispatch<R: Request>(&self, req: R) -> Result<R::Response, CapabilityError> {
+        let handler = self.handlers
+            .get(&TypeId::of::<R>())
+            .ok_or(CapabilityError::NotFound { request_type: R::name() })?;
+
+        let response = handler.handle_any(Box::new(req))?;
+
+        response.downcast::<R::Response>()
+            .map(|b| *b)
+            .map_err(|_| CapabilityError::HandlerFailed {
+                message: "Response type mismatch".into()
+            })
+    }
+
+    /// Merge scopes (coproduct-style)
+    pub fn merge(mut self, other: Self) -> Self {
+        for (k, v) in other.handlers {
+            self.handlers.insert(k, v);
+        }
+        self
+    }
+}
+
+// ============================================================
+// Example: A database capability
+// ============================================================
+
+pub struct PostgresDb {
+    connection_string: String,
+}
+
+impl Capability for PostgresDb {
+    fn capability_name(&self) -> &'static str { "PostgresDb" }
+}
+
+impl Handles<DbQuery> for PostgresDb {
+    fn handle(&self, req: DbQuery) -> Result<Vec<String>, CapabilityError> {
+        // Real implementation would query the database
+        Ok(vec![format!("Result for: {}", req.0)])
+    }
+}
+
+// ============================================================
+// Example: An LLM capability
+// ============================================================
+
+pub struct ClaudeClient {
+    api_key: String,
+}
+
+impl Capability for ClaudeClient {
+    fn capability_name(&self) -> &'static str { "ClaudeClient" }
+}
+
+impl Handles<LlmComplete> for ClaudeClient {
+    fn handle(&self, req: LlmComplete) -> Result<String, CapabilityError> {
+        // Real implementation would call Claude API
+        Ok(format!("Response to: {} (max {})", req.prompt, req.max_tokens))
+    }
+}
+
+// ============================================================
+// Usage example
+// ============================================================
+
+fn build_scope() -> CapabilityScope {
+    let mut scope = CapabilityScope::new();
+
+    let db = Arc::new(PostgresDb { connection_string: "...".into() });
+    let llm = Arc::new(ClaudeClient { api_key: "...".into() });
+
+    // Register capabilities by the requests they handle
+    scope.register::<_, DbQuery>(db);
+    scope.register::<_, LlmComplete>(llm);
+
+    scope
+}
+
+fn use_scope(scope: &CapabilityScope) -> Result<(), CapabilityError> {
+    // Yoneda-style: we don't ask "do you have a database?"
+    // We ask "can you handle DbQuery?"
+    if scope.can_handle::<DbQuery>() {
+        let results = scope.dispatch(DbQuery("SELECT * FROM users".into()))?;
+        println!("Got {} results", results.len());
+    }
+
+    // Type-safe: dispatch returns the correct Response type
+    let completion: String = scope.dispatch(LlmComplete {
+        prompt: "Hello".into(),
+        max_tokens: 100,
+    })?;
+
+    Ok(())
 }
 ```
 

@@ -6,6 +6,7 @@
 //! - **Errors**: First-class composition failures (Session 2)
 //! - **Categories**: Finite categories and functors (Session 3)
 //! - **Diagrams**: String diagram data structures for wiring computations (Session 4+)
+//! - **Capabilities**: Yoneda-style extensible scope system (Session 3.6)
 //!
 //! ## Design Philosophy
 //!
@@ -13,12 +14,14 @@
 //! Instead of imperative "run A, then run B", we build composite morphisms
 //! that can be inspected, transformed, and verified before execution.
 
+pub mod capability;
 pub mod cat;
 pub mod diagram;
 pub mod error;
 pub mod shape;
 
 // Re-export key types at crate root for convenience
+pub use capability::{Capability, CapabilityError, CapabilityScope, Handles, Request};
 pub use cat::{Coproduct, Scope};
 pub use error::CoreError;
 pub use shape::{Shape, TypeId};
