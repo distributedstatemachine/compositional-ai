@@ -113,6 +113,26 @@ impl DiffGraph {
         idx
     }
 
+    /// Add a subtraction node: a - b
+    pub fn sub(&mut self, a: NodeIndex, b: NodeIndex) -> NodeIndex {
+        let shape = self.get_output_shape(a, 0);
+        let node = Node::new(
+            DiffOp::Sub,
+            vec![Port::new(shape.clone()), Port::new(shape.clone())],
+            vec![Port::new(shape)],
+        );
+        let idx = self.diagram.add_node(node);
+
+        self.diagram
+            .graph
+            .add_edge(a, idx, compositional_core::diagram::Edge::new(0, 0));
+        self.diagram
+            .graph
+            .add_edge(b, idx, compositional_core::diagram::Edge::new(0, 1));
+
+        idx
+    }
+
     /// Add a multiplication node: a * b
     pub fn mul(&mut self, a: NodeIndex, b: NodeIndex) -> NodeIndex {
         let shape = self.get_output_shape(a, 0);

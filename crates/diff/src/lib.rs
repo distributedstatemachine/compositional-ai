@@ -16,7 +16,8 @@
 //! - [`ops`] — Differentiable operations (Session 8)
 //! - [`forward`] — Forward evaluation via topological sort (Session 8)
 //! - [`mod@backward`] — Reverse-mode autodiff (Session 9)
-//! - `optim` — Gradient descent optimization (Session 10, coming)
+//! - [`optim`] — Gradient descent optimization (Session 10)
+//! - [`train`] — Training utilities and loss functions (Session 10)
 //!
 //! ## Example: Const Generic Tensors (Session 7)
 //!
@@ -53,10 +54,14 @@
 pub mod backward;
 pub mod forward;
 pub mod ops;
+pub mod optim;
 pub mod tensor;
+pub mod train;
 
 // Re-export key types
 pub use backward::{backward, grad, grad_check, ForwardCache, ForwardValue, GradCheckError};
 pub use forward::{DiffGraph, ForwardEval};
 pub use ops::{DiffOp, RTensor};
+pub use optim::{Parameters, SGDMomentum, SGD};
 pub use tensor::{Linear, Tensor, MLP};
+pub use train::{mse_loss, train_step, LinearLayer, SimpleMLP};

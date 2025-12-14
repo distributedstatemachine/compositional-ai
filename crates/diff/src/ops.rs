@@ -242,6 +242,99 @@ impl RTensor {
     pub fn zeros_like(&self) -> RTensor {
         RTensor::zeros(self.shape.clone())
     }
+
+    /// Element-wise subtraction.
+    pub fn sub(&self, other: &RTensor) -> RTensor {
+        assert_eq!(self.shape, other.shape, "Shape mismatch for sub");
+        let data: Vec<f32> = self
+            .data
+            .iter()
+            .zip(other.data.iter())
+            .map(|(a, b)| a - b)
+            .collect();
+        RTensor {
+            shape: self.shape.clone(),
+            data,
+        }
+    }
+
+    /// Negate all elements.
+    pub fn neg(&self) -> RTensor {
+        let data: Vec<f32> = self.data.iter().map(|x| -x).collect();
+        RTensor {
+            shape: self.shape.clone(),
+            data,
+        }
+    }
+
+    /// Create a tensor with random values from N(0, scale²).
+    ///
+    /// Uses a simple linear congruential generator for reproducibility.
+    pub fn randn(shape: Vec<usize>, scale: f32) -> RTensor {
+        let size: usize = shape.iter().product();
+        let mut data = Vec::with_capacity(size);
+
+        // Simple LCG for reproducible "random" numbers
+        // For real applications, use rand crate
+        let mut seed: u64 = 12345;
+        for _ in 0..size {
+            // Box-Muller transform for normal distribution
+            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+            let u1 = (seed as f32) / (u64::MAX as f32);
+            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+            let u2 = (seed as f32) / (u64::MAX as f32);
+
+            // Avoid log(0)
+            let u1 = u1.max(1e-10);
+            let z = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f32::consts::PI * u2).cos();
+            data.push(z * scale);
+        }
+
+        RTensor { shape, data }
+    }
+
+    /// Create a tensor with random values, using a seed.
+    pub fn randn_seeded(shape: Vec<usize>, scale: f32, seed: u64) -> RTensor {
+        let size: usize = shape.iter().product();
+        let mut data = Vec::with_capacity(size);
+
+        let mut state = seed;
+        for _ in 0..size {
+            state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
+            let u1 = (state as f32) / (u64::MAX as f32);
+            state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
+            let u2 = (state as f32) / (u64::MAX as f32);
+
+            let u1 = u1.max(1e-10);
+            let z = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f32::consts::PI * u2).cos();
+            data.push(z * scale);
+        }
+
+        RTensor { shape, data }
+    }
+
+    /// Clip values to [-max_val, max_val].
+    pub fn clip(&self, max_val: f32) -> RTensor {
+        let data: Vec<f32> = self
+            .data
+            .iter()
+            .map(|&x| x.max(-max_val).min(max_val))
+            .collect();
+        RTensor {
+            shape: self.shape.clone(),
+            data,
+        }
+    }
+
+    /// Compute mean of all elements.
+    pub fn mean(&self) -> f32 {
+        self.data.iter().sum::<f32>() / self.data.len() as f32
+    }
+
+    /// Compute L2 norm.
+    pub fn norm(&self) -> f32 {
+        self.data.iter().map(|x| x * x).sum::<f32>().sqrt()
+    }
 }
 
 impl fmt::Debug for RTensor {
@@ -271,6 +364,9 @@ pub enum DiffOp {
 
     /// Element-wise addition: a + b
     Add,
+
+    /// Element-wise subtraction: a - b
+    Sub,
 
     /// Element-wise multiplication: a * b
     Mul,
@@ -311,6 +407,11 @@ impl DiffOp {
                 vec![inputs[0].add(&inputs[1])]
             }
 
+            DiffOp::Sub => {
+                assert_eq!(inputs.len(), 2, "Sub requires 2 inputs");
+                vec![inputs[0].sub(&inputs[1])]
+            }
+
             DiffOp::Mul => {
                 assert_eq!(inputs.len(), 2, "Mul requires 2 inputs");
                 vec![inputs[0].mul(&inputs[1])]
@@ -349,6 +450,7 @@ impl DiffOp {
             DiffOp::Input { .. } => 1,
             DiffOp::Const { .. } => 0,
             DiffOp::Add => 2,
+            DiffOp::Sub => 2,
             DiffOp::Mul => 2,
             DiffOp::MatMul => 2,
             DiffOp::ReLU => 1,
@@ -396,6 +498,13 @@ impl DiffOp {
                 // ∂L/∂x = ∂L/∂z, ∂L/∂y = ∂L/∂z
                 let grad = &output_grads[0];
                 vec![grad.clone(), grad.clone()]
+            }
+
+            DiffOp::Sub => {
+                // z = x - y
+                // ∂L/∂x = ∂L/∂z, ∂L/∂y = -∂L/∂z
+                let grad = &output_grads[0];
+                vec![grad.clone(), grad.neg()]
             }
 
             DiffOp::Mul => {
@@ -462,6 +571,7 @@ impl fmt::Display for DiffOp {
             DiffOp::Input { index } => write!(f, "Input[{}]", index),
             DiffOp::Const { value } => write!(f, "Const({})", value),
             DiffOp::Add => write!(f, "Add"),
+            DiffOp::Sub => write!(f, "Sub"),
             DiffOp::Mul => write!(f, "Mul"),
             DiffOp::MatMul => write!(f, "MatMul"),
             DiffOp::ReLU => write!(f, "ReLU"),
