@@ -4,8 +4,8 @@ members = [
     "crates/core",
     "crates/diff",
     "crates/prob",
+    "crates/nlp",
     # Future crates:
-    # "crates/nlp",
     # "crates/games",
     # "crates/operads",
     # "demos",

@@ -1,0 +1,12 @@
+[package]
+name = "compositional-nlp"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "NLP via category theory: Pregroup grammars, DisCoCat, and compositional semantics"
+
+[dependencies]
+thiserror.workspace = true
+
+[dev-dependencies]
