@@ -561,18 +561,154 @@ Sessions 7-10      Sessions 11-14    Sessions 15-16  │
 * `tensor` = monoidal (parallel) composition
 * Interchange law intuition (won’t prove, but you’ll feel it)
 
-**Build (commit 5) — `then()` + `tensor()`**
+**Build (commit 5) — `then()` + `tensor()` + Parallel Agents**
 
 * In `core::diagram` implement:
 
   * `Diagram::then(&self, rhs: &Diagram<O>) -> Result<Diagram<O>, CoreError>`
   * `Diagram::tensor(&self, rhs: &Diagram<O>) -> Diagram<O>`
   * internal `remap_node_ids` helper (copy graphs + reconnect)
+
+* **Parallel Agent Infrastructure** in `core::parallel`:
+
+  ```rust
+  use std::future::Future;
+  use tokio::task::JoinSet;
+
+  /// A parallel executor that runs multiple agents concurrently
+  /// This is the runtime interpretation of the tensor product (⊗)
+  pub struct ParallelAgents<A> {
+      agents: Vec<A>,
+  }
+
+  impl<A> ParallelAgents<A> {
+      pub fn new() -> Self {
+          Self { agents: Vec::new() }
+      }
+
+      pub fn with(mut self, agent: A) -> Self {
+          self.agents.push(agent);
+          self
+      }
+
+      /// Tensor two parallel groups: (a₁ ⊗ a₂) ⊗ (b₁ ⊗ b₂) = a₁ ⊗ a₂ ⊗ b₁ ⊗ b₂
+      pub fn tensor(mut self, mut other: Self) -> Self {
+          self.agents.append(&mut other.agents);
+          self
+      }
+  }
+
+  impl<A, I, O, E> ParallelAgents<A>
+  where
+      A: Agent<Input = I, Output = O, Error = E> + Send + 'static,
+      I: Clone + Send + 'static,
+      O: Send + 'static,
+      E: Send + 'static,
+  {
+      /// Execute all agents in parallel, collecting results
+      /// This is the semantic interpretation of f ⊗ g
+      pub async fn run_all(&self, inputs: Vec<I>) -> Result<Vec<O>, E> {
+          let mut set = JoinSet::new();
+
+          for (agent, input) in self.agents.iter().zip(inputs) {
+              let agent = agent.clone();
+              set.spawn(async move { agent.run(input).await });
+          }
+
+          let mut results = Vec::with_capacity(self.agents.len());
+          while let Some(result) = set.join_next().await {
+              results.push(result.unwrap()?);
+          }
+          Ok(results)
+      }
+
+      /// Fan-out: same input to all agents (broadcast)
+      pub async fn fan_out(&self, input: I) -> Result<Vec<O>, E> {
+          let inputs = vec![input; self.agents.len()];
+          self.run_all(inputs).await
+      }
+  }
+
+  /// The Agent trait — minimal interface for parallel execution
+  pub trait Agent: Clone + Send + Sync {
+      type Input: Send;
+      type Output: Send;
+      type Error: Send;
+
+      fn run(&self, input: Self::Input) -> impl Future<Output = Result<Self::Output, Self::Error>> + Send;
+  }
+  ```
+
+* **Fan-in Combiner** for merging parallel results:
+
+  ```rust
+  /// Combines results from parallel agents
+  /// This completes the parallel pattern: fan-out → process → fan-in
+  pub trait Combiner<T> {
+      type Output;
+      fn combine(&self, results: Vec<T>) -> Self::Output;
+  }
+
+  /// Simple concatenation combiner
+  pub struct Concat;
+  impl Combiner<String> for Concat {
+      type Output = String;
+      fn combine(&self, results: Vec<String>) -> String {
+          results.join("\n")
+      }
+  }
+
+  /// Voting combiner (majority wins)
+  pub struct Vote;
+  impl<T: Eq + std::hash::Hash + Clone> Combiner<T> for Vote {
+      type Output = Option<T>;
+      fn combine(&self, results: Vec<T>) -> Option<T> {
+          use std::collections::HashMap;
+          let mut counts: HashMap<T, usize> = HashMap::new();
+          for r in results {
+              *counts.entry(r).or_insert(0) += 1;
+          }
+          counts.into_iter().max_by_key(|(_, c)| *c).map(|(v, _)| v)
+      }
+  }
+  ```
+
+* **Example: Research + Analyze → Combine pipeline**
+
+  ```rust
+  // Two parallel research agents
+  let researchers = ParallelAgents::new()
+      .with(WebSearchAgent::new("technical"))
+      .with(WebSearchAgent::new("academic"));
+
+  // Fan-out query to both, collect results
+  let findings = researchers.fan_out(query).await?;
+
+  // Combine with a synthesis agent (this is sequential composition)
+  let synthesis = SynthesisAgent::new();
+  let report = synthesis.run(findings).await?;
+
+  // As a diagram:
+  //
+  //              ┌─────────────────┐
+  //   query ─────│ WebSearch(tech) │─────┐
+  //              └─────────────────┘     │    ┌───────────┐
+  //                                      ├────│ Synthesis │──── report
+  //              ┌─────────────────┐     │    └───────────┘
+  //   query ─────│ WebSearch(acad) │─────┘
+  //              └─────────────────┘
+  //
+  //   (search_tech ⊗ search_acad) ; synthesize
+  ```
+
 * Tests:
 
   * compose matching boundaries passes
   * mismatched boundary shapes errors
   * tensor doubles boundary count, preserves shapes
+  * parallel agents execute concurrently (timing test)
+  * fan-out broadcasts input correctly
+  * combiners merge results as expected
 
 ---
 

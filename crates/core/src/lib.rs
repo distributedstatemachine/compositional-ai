@@ -5,7 +5,8 @@
 //! - **Shapes**: Type-level descriptions of tensor dimensions (Session 2)
 //! - **Errors**: First-class composition failures (Session 2)
 //! - **Categories**: Finite categories and functors (Session 3)
-//! - **Diagrams**: String diagram data structures for wiring computations (Session 4+)
+//! - **Diagrams**: String diagram data structures for wiring computations (Session 4)
+//! - **Parallel**: Runtime tensor product for concurrent agent execution (Session 5)
 //! - **Capabilities**: Yoneda-style extensible scope system (Session 3.6)
 //!
 //! ## Design Philosophy
@@ -18,6 +19,7 @@ pub mod capability;
 pub mod cat;
 pub mod diagram;
 pub mod error;
+pub mod parallel;
 pub mod shape;
 
 // Re-export key types at crate root for convenience
@@ -25,4 +27,5 @@ pub use capability::{Capability, CapabilityError, CapabilityScope, Handles, Requ
 pub use cat::{Coproduct, Scope};
 pub use diagram::{Diagram, Node, Port};
 pub use error::CoreError;
+pub use parallel::{Agent, Combiner, ParallelAgents};
 pub use shape::{Shape, TypeId};

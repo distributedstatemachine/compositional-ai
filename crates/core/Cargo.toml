@@ -9,5 +9,7 @@ description = "Core abstractions for compositional AI: shapes, diagrams, and cat
 [dependencies]
 thiserror.workspace = true
 petgraph.workspace = true
+tokio.workspace = true
 
 [dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
