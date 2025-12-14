@@ -40,4 +40,8 @@ pub enum ProbError {
     /// Index out of bounds.
     #[error("Index {index} out of bounds for size {size}")]
     IndexOutOfBounds { index: usize, size: usize },
+
+    /// Invalid parameter value.
+    #[error("Invalid parameter '{name}': {reason}")]
+    InvalidParameter { name: String, reason: String },
 }
