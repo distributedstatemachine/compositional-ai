@@ -20,6 +20,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "compositional-games"
+version = "0.1.0"
+dependencies = [
+ "thiserror",
+]
+
+[[package]]
 name = "compositional-nlp"
 version = "0.1.0"
 dependencies = [

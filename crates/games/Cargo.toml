@@ -1,0 +1,11 @@
+[package]
+name = "compositional-games"
+version.workspace = true
+edition.workspace = true
+description = "Open Games: Compositional game theory with swappable policies, environments, and objectives"
+license.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+
+[dev-dependencies]
