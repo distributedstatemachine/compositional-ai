@@ -1,4 +1,4 @@
-//! # Prob - Stochastic Maps via Category Theory (Session 11)
+//! # Prob - Stochastic Maps via Category Theory (Sessions 11-12)
 //!
 //! This crate implements probability distributions and Markov kernels as categorical
 //! structures, following the treatment in Tobias Fritz's "Markov categories" and
@@ -10,6 +10,7 @@
 //! - **Row-stochastic matrices are morphisms**: `K[i,j]` = P(output=j | input=i)
 //! - **Composition is marginalization**: `(K;L)[i,k]` = Σⱼ `K[i,j]` · `L[j,k]`
 //! - **The category FinStoch**: Objects are finite sets, morphisms are Markov kernels
+//! - **Bayesian networks**: Compositions of conditionals (kernels) over a DAG
 //!
 //! ## Example: Weather Markov Chain
 //!
@@ -34,10 +35,14 @@
 //! let day_after = two_days.apply(&today).unwrap();
 //! ```
 
+mod bayesnet;
 mod dist;
 mod error;
 mod kernel;
 
+pub use bayesnet::{
+    naive_bayes, sprinkler_network, BayesNet, Factor, JointDist, VariableElimination,
+};
 pub use dist::Dist;
 pub use error::ProbError;
 pub use kernel::Kernel;
