@@ -2,8 +2,8 @@
 resolver = "2"
 members = [
     "crates/core",
+    "crates/diff",
     # Future crates:
-    # "crates/diff",
     # "crates/prob",
     # "crates/nlp",
     # "crates/games",

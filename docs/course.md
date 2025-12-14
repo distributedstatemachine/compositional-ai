@@ -810,67 +810,103 @@ Sessions 7-10      Sessions 11-14    Sessions 15-16  │
   * Now we implement actual const generic tensors for compile-time dimension checking
   * Trade-off: less flexible than runtime shapes, but catches dimension errors at compile time
 
-**Build (commit 7) — `diff` crate scaffolding + Tensor**
+**Build (commit 7) — `diff` crate scaffolding + Const Generic Tensors**
 
 * Add `crates/diff/src/lib.rs`, `tensor.rs`, `ops.rs`
-* Implement **runtime `Tensor`** (flexible, dynamic):
 
-  * `Scalar(f32)`, `Vec(Array1<f32>)`, `Mat(Array2<f32>)`
-  * `shape()` -> `Shape`
-
-* Implement **const generic `StaticTensor`** (rigid, compile-time checked):
+* Implement **const generic tensors** (compile-time dimension checking):
 
   ```rust
-  /// Compile-time dimensioned tensor
+  /// A tensor with compile-time known dimensions
   /// Shape errors become compile errors, not runtime panics
-  #[derive(Clone, Debug)]
-  pub struct StaticTensor<T, const N: usize> {
-      data: [T; N],
+  pub struct Tensor<T, const ROWS: usize, const COLS: usize> {
+      data: [[T; COLS]; ROWS],
   }
 
-  /// Type aliases for common shapes
-  pub type Scalar<T> = StaticTensor<T, 1>;
-  pub type Vector<T, const N: usize> = StaticTensor<T, N>;
+  impl<T, const M: usize, const N: usize> Tensor<T, M, N> {
+      /// Matrix multiplication with compile-time dimension checking
+      /// (M × N) · (N × P) → (M × P)
+      /// Note: N must match - enforced by the type system!
+      pub fn matmul<const P: usize>(
+          &self,
+          other: &Tensor<T, N, P>,
+      ) -> Tensor<T, M, P>
+      where
+          T: Default + Copy + std::ops::Add<Output = T> + std::ops::Mul<Output = T>,
+      {
+          // Implementation...
+      }
 
+      /// Element-wise operations preserve shape (enforced by types)
+      pub fn add(&self, other: &Tensor<T, M, N>) -> Tensor<T, M, N> { ... }
+      pub fn relu(&self) -> Tensor<T, M, N> { ... }
+  }
+  ```
+
+* Implement **type-safe neural network layers**:
+
+  ```rust
   /// A linear layer with compile-time dimension checking
   pub struct Linear<const IN: usize, const OUT: usize> {
-      weights: [[f32; IN]; OUT],
-      bias: [f32; OUT],
+      weights: Tensor<f32, OUT, IN>,
+      bias: Tensor<f32, 1, OUT>,
   }
 
   impl<const IN: usize, const OUT: usize> Linear<IN, OUT> {
-      pub fn forward(&self, input: Vector<f32, IN>) -> Vector<f32, OUT> {
-          // Shape mismatch is IMPOSSIBLE — won't compile
-          todo!()
+      pub fn forward<const BATCH: usize>(
+          &self,
+          input: &Tensor<f32, BATCH, IN>,
+      ) -> Tensor<f32, BATCH, OUT> {
+          input.matmul(&self.weights.transpose()).add_bias(&self.bias)
       }
   }
 
-  // Composing layers — dimensions must chain:
-  // This compiles: 784 → 512 → 256 → 10
-  type MLP = (Linear<784, 512>, Linear<512, 256>, Linear<256, 10>);
+  /// Multi-layer perceptron with type-checked composition
+  pub struct MLP<const IN: usize, const HIDDEN: usize, const OUT: usize> {
+      layer1: Linear<IN, HIDDEN>,
+      layer2: Linear<HIDDEN, OUT>,
+  }
 
-  // This WON'T compile — dimension mismatch:
-  // type BadMLP = (Linear<784, 512>, Linear<256, 10>);  // 512 ≠ 256
+  impl<const IN: usize, const HIDDEN: usize, const OUT: usize> MLP<IN, HIDDEN, OUT> {
+      pub fn forward<const BATCH: usize>(
+          &self,
+          input: &Tensor<f32, BATCH, IN>,
+      ) -> Tensor<f32, BATCH, OUT> {
+          let h = self.layer1.forward(input).relu();
+          self.layer2.forward(&h)
+      }
+  }
+
+  // Usage - dimensions checked at compile time:
+  let mlp: MLP<784, 256, 10> = MLP::new();
+  let input: Tensor<f32, 32, 784> = Tensor::zeros();
+  let output = mlp.forward(&input);  // Tensor<f32, 32, 10>
+
+  // This won't compile - dimension mismatch!
+  // let bad: Tensor<f32, 32, 100> = Tensor::zeros();
+  // let _ = mlp.forward(&bad);  // Error: expected 784, got 100
   ```
 
-* **When to use which:**
-  * `Tensor` (runtime): dynamic graphs, variable batch sizes, flexibility
-  * `StaticTensor` (const generic): fixed architectures, maximum safety, zero-cost abstractions
-* Add `DiffOp` enum with ports:
+* Add `DiffOp` enum with const generic ports:
 
-  * `Add` — elementwise addition, 2 inputs → 1 output (same shape)
-  * `ReLU` — elementwise max(0, x), 1 input → 1 output (same shape)
-  * `MatMul` — matrix multiplication, 2 inputs → 1 output (shape: [m,k] × [k,n] → [m,n])
-  * `SumAll` — reduce to scalar, 1 input → 1 scalar output
-  * `Copy` (fan-out/diagonal) — duplicates input to multiple outputs, 1 input → N outputs (same shape each)
-    ```rust
-    /// Copy is the categorical "diagonal" — it duplicates data.
-    /// This is NOT the identity; identity would be 1→1 with no duplication.
-    /// Copy(2) means: one input wire splits into two output wires.
-    Copy { fan_out: usize },
-    ```
+  ```rust
+  /// Differentiable operations for computation graphs
+  pub enum DiffOp {
+      /// Element-wise addition: (M × N) + (M × N) → (M × N)
+      Add,
+      /// Element-wise ReLU: (M × N) → (M × N)
+      ReLU,
+      /// Matrix multiplication: (M × K) · (K × N) → (M × N)
+      MatMul,
+      /// Sum all elements to scalar: (M × N) → (1 × 1)
+      SumAll,
+      /// Copy/fan-out (categorical diagonal): duplicates input
+      Copy { fan_out: usize },
+  }
+  ```
+
 * Make `DiffOp` usable as `O` in `Diagram<DiffOp>`
-* Tests: op port shapes + tensor shape mapping
+* Tests: type-safe composition, compile-time dimension errors
 
 ---
 
