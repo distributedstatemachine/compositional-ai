@@ -49,6 +49,7 @@ pub mod env;
 mod error;
 pub mod policy;
 pub mod rollout;
+pub mod scoped;
 
 pub use env::Env;
 pub use error::GameError;
