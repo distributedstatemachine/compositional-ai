@@ -321,7 +321,8 @@ mod tests {
         let (result, trace) = traced.run(5).await.unwrap();
         assert_eq!(result, 6);
         assert_eq!(trace.name, "AddOne");
-        assert!(trace.duration.as_nanos() > 0);
+        // Note: duration may be 0 for very fast operations on some systems
+        // Timing accuracy is tested in test_trace_timing_accuracy
     }
 
     #[tokio::test]

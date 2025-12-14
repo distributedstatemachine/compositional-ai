@@ -296,6 +296,87 @@ impl BayesNet {
         let joint = self.full_joint();
         joint.condition_on(query_var, evidence)
     }
+
+    /// Create a new network with intervention do(var=value).
+    ///
+    /// This "mutilates" the graph by:
+    /// 1. Removing the factor for the intervened variable
+    /// 2. Adding a point mass at the intervention value
+    ///
+    /// The key insight: do(X=x) ≠ observing X=x
+    /// - Observing X=x: We learn X=x, which tells us about X's causes
+    /// - Intervening do(X=x): We force X=x, breaking the causal mechanism
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use compositional_prob::{sprinkler_network, Dist};
+    ///
+    /// let net = sprinkler_network();
+    ///
+    /// // Intervene: force Sprinkler=On
+    /// let intervened = net.intervene(1, 1);
+    ///
+    /// // P(WetGrass | do(Sprinkler=On)) differs from P(WetGrass | Sprinkler=On)
+    /// let p_wet_do = intervened.marginal(3).unwrap();
+    /// assert!(p_wet_do.p[1] > 0.8); // Grass very likely wet
+    /// ```
+    pub fn intervene(&self, var: usize, value: usize) -> BayesNet {
+        let mut new_net = BayesNet::new(self.var_states.clone());
+        new_net.var_names = self.var_names.clone();
+
+        for factor in &self.factors {
+            if factor.variable == var {
+                // Replace with point mass at intervention value
+                let point_mass = Dist::point(self.var_states[var], value);
+                new_net.add_prior(var, &point_mass).unwrap();
+            } else {
+                // Keep other factors unchanged
+                new_net.add_factor(factor.clone()).unwrap();
+            }
+        }
+
+        new_net
+    }
+
+    /// Create a new network with multiple interventions.
+    ///
+    /// Applies do(X₁=x₁, X₂=x₂, ...) by mutilating all specified variables.
+    pub fn intervene_multiple(&self, interventions: &HashMap<usize, usize>) -> BayesNet {
+        let mut new_net = BayesNet::new(self.var_states.clone());
+        new_net.var_names = self.var_names.clone();
+
+        for factor in &self.factors {
+            if let Some(&value) = interventions.get(&factor.variable) {
+                // Replace with point mass
+                let point_mass = Dist::point(self.var_states[factor.variable], value);
+                new_net.add_prior(factor.variable, &point_mass).unwrap();
+            } else {
+                // Keep factor unchanged
+                new_net.add_factor(factor.clone()).unwrap();
+            }
+        }
+
+        new_net
+    }
+
+    /// Get the parents of a variable (from its factor).
+    pub fn parents(&self, var: usize) -> Vec<usize> {
+        self.factors
+            .iter()
+            .find(|f| f.variable == var)
+            .map(|f| f.parents.clone())
+            .unwrap_or_default()
+    }
+
+    /// Get the children of a variable.
+    pub fn children(&self, var: usize) -> Vec<usize> {
+        self.factors
+            .iter()
+            .filter(|f| f.parents.contains(&var))
+            .map(|f| f.variable)
+            .collect()
+    }
 }
 
 /// A joint distribution over multiple variables.
