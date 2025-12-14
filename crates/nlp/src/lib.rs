@@ -27,9 +27,13 @@
 
 mod error;
 pub mod pregroup;
+pub mod semantics;
 
 pub use error::NlpError;
 pub use pregroup::{
     extract_cups, AtomicType, BasicType, Cup, Grammar, ParseResult, PregroupType, ReductionStep,
     TypedWord,
+};
+pub use semantics::{
+    bilinear_form, inner_product, matrix_vector_mult, vector_matrix_mult, Semantics, WordTensor,
 };
