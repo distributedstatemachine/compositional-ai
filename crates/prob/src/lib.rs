@@ -1,4 +1,4 @@
-//! # Prob - Stochastic Maps via Category Theory (Sessions 11-12)
+//! # Prob - Stochastic Maps via Category Theory (Sessions 11-13)
 //!
 //! This crate implements probability distributions and Markov kernels as categorical
 //! structures, following the treatment in Tobias Fritz's "Markov categories" and
@@ -11,6 +11,7 @@
 //! - **Composition is marginalization**: `(K;L)[i,k]` = Σⱼ `K[i,j]` · `L[j,k]`
 //! - **The category FinStoch**: Objects are finite sets, morphisms are Markov kernels
 //! - **Bayesian networks**: Compositions of conditionals (kernels) over a DAG
+//! - **Conditioning**: Bayes' rule requires renormalization (not plain composition)
 //!
 //! ## Example: Weather Markov Chain
 //!
@@ -38,6 +39,7 @@
 mod bayesnet;
 mod dist;
 mod error;
+mod inference;
 mod kernel;
 
 pub use bayesnet::{
@@ -45,6 +47,12 @@ pub use bayesnet::{
 };
 pub use dist::Dist;
 pub use error::ProbError;
+pub use inference::{
+    bayes_update, conditional_mutual_information, evidence_probability, importance_sample,
+    likelihood_ratio, likelihood_weighting, likelihood_weighting_with_diagnostics,
+    mutual_information, odds_to_prob, odds_update, prob_to_odds, sequential_update, ExactInference,
+    ImportanceSampleResult, LikelihoodWeightingResult,
+};
 pub use kernel::Kernel;
 
 /// Tolerance for probability comparisons.
