@@ -23,5 +23,6 @@ pub mod shape;
 // Re-export key types at crate root for convenience
 pub use capability::{Capability, CapabilityError, CapabilityScope, Handles, Request};
 pub use cat::{Coproduct, Scope};
+pub use diagram::{Diagram, Node, Port};
 pub use error::CoreError;
 pub use shape::{Shape, TypeId};

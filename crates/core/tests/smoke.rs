@@ -264,3 +264,70 @@ fn smoke_complete_pipeline() {
     assert_eq!(diagram.node_count(), 4);
     assert_eq!(diagram.edge_count(), 3);
 }
+
+// ============================================================================
+// Session 4: Composition Smoke Tests
+// ============================================================================
+
+#[test]
+fn smoke_sequential_composition() {
+    // f: scalar → vector(10)
+    let f = Diagram::from_node(Node::new(
+        SimpleOp::Add,
+        vec![Port::new(Shape::f32_scalar())],
+        vec![Port::new(Shape::f32_vector(10))],
+    ));
+
+    // g: vector(10) → vector(20)
+    let g = Diagram::from_node(Node::new(
+        SimpleOp::Add,
+        vec![Port::new(Shape::f32_vector(10))],
+        vec![Port::new(Shape::f32_vector(20))],
+    ));
+
+    // f ; g should compose
+    let fg = f.then(g).expect("composition should succeed");
+    assert_eq!(fg.node_count(), 2);
+    assert_eq!(fg.edge_count(), 1);
+}
+
+#[test]
+fn smoke_parallel_composition() {
+    // f: A → B
+    let f = Diagram::from_node(Node::new(
+        SimpleOp::Add,
+        vec![Port::new(Shape::f32_scalar())],
+        vec![Port::new(Shape::f32_vector(10))],
+    ));
+
+    // g: C → D
+    let g = Diagram::from_node(Node::new(
+        SimpleOp::Add,
+        vec![Port::new(Shape::f32_vector(20))],
+        vec![Port::new(Shape::f32_vector(30))],
+    ));
+
+    // f ⊗ g : (A, C) → (B, D)
+    let fg = f.tensor(g);
+    assert_eq!(fg.node_count(), 2);
+    assert_eq!(fg.edge_count(), 0); // no connection between parallel nodes
+    assert_eq!(fg.inputs.len(), 2);
+    assert_eq!(fg.outputs.len(), 2);
+}
+
+#[test]
+fn smoke_from_node() {
+    let node = Node::new(
+        SimpleOp::Add,
+        vec![
+            Port::new(Shape::f32_scalar()),
+            Port::new(Shape::f32_scalar()),
+        ],
+        vec![Port::new(Shape::f32_scalar())],
+    );
+
+    let diagram = Diagram::from_node(node);
+    assert_eq!(diagram.node_count(), 1);
+    assert_eq!(diagram.inputs.len(), 2);
+    assert_eq!(diagram.outputs.len(), 1);
+}
