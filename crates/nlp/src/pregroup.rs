@@ -424,7 +424,7 @@ impl Grammar {
         }
 
         // Common nouns
-        for noun in ["dog", "cat", "man", "woman", "book", "table"] {
+        for noun in ["dog", "cat", "man", "woman", "book", "table", "mouse"] {
             grammar.add_word(noun, PregroupType::noun());
         }
 
@@ -444,7 +444,9 @@ impl Grammar {
         }
 
         // Transitive verbs
-        for verb in ["loves", "hates", "sees", "knows", "chases"] {
+        for verb in [
+            "loves", "hates", "sees", "knows", "chases", "adores", "bites",
+        ] {
             grammar.add_word(verb, PregroupType::transitive_verb());
         }
 

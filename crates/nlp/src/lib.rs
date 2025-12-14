@@ -25,10 +25,15 @@
 //! println!("{}", result.trace());
 //! ```
 
+pub mod discocat;
 mod error;
 pub mod pregroup;
 pub mod semantics;
 
+pub use discocat::{
+    build_verb_tensor, cosine_similarity, spearman_correlation, Baselines, DisCoCat,
+    EvaluationResult, SentenceSemantics, SentenceTensor, Tensor3, VerbConstructionMethod,
+};
 pub use error::NlpError;
 pub use pregroup::{
     extract_cups, AtomicType, BasicType, Cup, Grammar, ParseResult, PregroupType, ReductionStep,
