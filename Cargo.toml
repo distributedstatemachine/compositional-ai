@@ -3,8 +3,8 @@ resolver = "2"
 members = [
     "crates/core",
     "crates/diff",
+    "crates/prob",
     # Future crates:
-    # "crates/prob",
     # "crates/nlp",
     # "crates/games",
     # "crates/operads",

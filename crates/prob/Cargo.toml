@@ -1,0 +1,12 @@
+[package]
+name = "compositional-prob"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Probability and stochastic maps via category theory: distributions, Markov kernels, and the FinStoch category"
+
+[dependencies]
+thiserror.workspace = true
+
+[dev-dependencies]
