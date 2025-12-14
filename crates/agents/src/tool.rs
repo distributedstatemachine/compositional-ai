@@ -3,14 +3,120 @@
 //! Tools wrap capabilities (via `Handles<R>`) and integrate with the
 //! LLM tool-calling interface. This module provides:
 //!
+//! - `ToolDef`: Type-safe tool definition trait (inspired by rig-core)
 //! - `Tool`: A named capability with schema for LLM function calling
 //! - `ToolRegistry`: Collection of tools using `CapabilityScope` from core
+//!
+//! ## Type-Safe Tools with `ToolDef`
+//!
+//! For compile-time tool names and typed arguments:
+//!
+//! ```ignore
+//! struct Calculator;
+//!
+//! impl ToolDef for Calculator {
+//!     const NAME: &'static str = "calculate";
+//!     type Args = CalcArgs;
+//!     type Output = String;
+//!     type Error = CapabilityError;
+//!
+//!     fn description() -> &'static str {
+//!         "Evaluate a mathematical expression"
+//!     }
+//!
+//!     fn call(args: Self::Args) -> Result<Self::Output, Self::Error> {
+//!         // implementation
+//!     }
+//! }
+//! ```
 
 use crate::requests::{ToolInvoke, ToolResult, ToolSchema};
 use compositional_core::capability::{CapabilityError, CapabilityScope, Handles};
 use serde::{de::DeserializeOwned, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
+
+// ============================================================================
+// ToolDef Trait (Type-Safe Tool Definition)
+// ============================================================================
+
+/// Type-safe tool definition trait.
+///
+/// This trait provides compile-time tool names and typed arguments,
+/// inspired by rig-core's `Tool` trait.
+///
+/// ## Example
+///
+/// ```ignore
+/// use compositional_agents::tool::ToolDef;
+/// use compositional_core::capability::CapabilityError;
+///
+/// #[derive(serde::Deserialize)]
+/// struct SearchArgs {
+///     query: String,
+///     limit: Option<usize>,
+/// }
+///
+/// struct WebSearch;
+///
+/// impl ToolDef for WebSearch {
+///     const NAME: &'static str = "web_search";
+///     type Args = SearchArgs;
+///     type Output = Vec<String>;
+///     type Error = CapabilityError;
+///
+///     fn description() -> &'static str {
+///         "Search the web for information"
+///     }
+///
+///     fn call(args: Self::Args) -> Result<Self::Output, Self::Error> {
+///         Ok(vec![format!("Results for: {}", args.query)])
+///     }
+/// }
+/// ```
+pub trait ToolDef: Send + Sync + 'static {
+    /// The tool's unique name (compile-time constant).
+    const NAME: &'static str;
+
+    /// Arguments type (must be deserializable from JSON).
+    type Args: DeserializeOwned + Send + Sync + 'static;
+
+    /// Output type (must be serializable to JSON).
+    type Output: Serialize + Send + Sync + 'static;
+
+    /// Error type.
+    type Error: std::error::Error + Send + Sync + 'static;
+
+    /// Description of what the tool does.
+    fn description() -> &'static str;
+
+    /// Execute the tool with the given arguments.
+    fn call(args: Self::Args) -> Result<Self::Output, Self::Error>;
+
+    /// Get the tool's name at runtime.
+    fn name() -> &'static str {
+        Self::NAME
+    }
+
+    /// Build a ToolSchema for this tool.
+    ///
+    /// Override this to add parameter documentation.
+    fn schema() -> ToolSchema {
+        ToolSchema::new(Self::NAME, Self::description())
+    }
+
+    /// Convert this ToolDef into a Tool instance.
+    fn into_tool() -> Tool
+    where
+        Self: Sized,
+    {
+        Tool::new(Self::schema(), |args: Self::Args| {
+            Self::call(args).map_err(|e| CapabilityError::HandlerFailed {
+                message: e.to_string(),
+            })
+        })
+    }
+}
 
 // ============================================================================
 // Tool Handler Trait
@@ -146,6 +252,20 @@ impl ToolRegistry {
     /// Register a tool.
     pub fn register(&mut self, tool: Tool) {
         self.tools.insert(tool.name.clone(), tool);
+    }
+
+    /// Register a tool from a ToolDef type.
+    ///
+    /// This provides compile-time tool names and typed arguments.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// registry.register_def::<Calculator>();
+    /// registry.register_def::<WebSearch>();
+    /// ```
+    pub fn register_def<T: ToolDef>(&mut self) {
+        self.register(T::into_tool());
     }
 
     /// Register a capability that handles `ToolInvoke` requests.

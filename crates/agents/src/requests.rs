@@ -179,6 +179,66 @@ impl ToolResult {
 }
 
 // ============================================================================
+// Tool Choice
+// ============================================================================
+
+/// Controls whether and how the model should use tools.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ToolChoice {
+    /// Let the model decide whether to use tools (default)
+    #[default]
+    Auto,
+    /// Model must call at least one tool before responding
+    Required,
+    /// Model should not use any tools
+    None,
+    /// Model must call this specific tool
+    Specific(String),
+}
+
+// ============================================================================
+// Context Document
+// ============================================================================
+
+/// A document that provides context to the agent.
+///
+/// Context documents are always included in the agent's prompt,
+/// providing background information the agent can reference.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Document {
+    /// Document title/identifier
+    pub title: String,
+    /// Document content
+    pub content: String,
+    /// Optional metadata
+    #[serde(default)]
+    pub metadata: std::collections::HashMap<String, String>,
+}
+
+impl Document {
+    /// Create a new context document.
+    pub fn new(title: impl Into<String>, content: impl Into<String>) -> Self {
+        Self {
+            title: title.into(),
+            content: content.into(),
+            metadata: std::collections::HashMap::new(),
+        }
+    }
+
+    /// Add metadata to the document.
+    pub fn with_metadata(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        self.metadata.insert(key.into(), value.into());
+        self
+    }
+
+    /// Format as context string for inclusion in prompts.
+    pub fn as_context(&self) -> String {
+        format!("## {}\n\n{}", self.title, self.content)
+    }
+}
+
+// ============================================================================
 // LLM Request/Response
 // ============================================================================
 
@@ -193,6 +253,8 @@ pub struct LlmRequest {
     pub max_tokens: usize,
     /// Temperature for sampling
     pub temperature: f32,
+    /// Tool choice behavior
+    pub tool_choice: ToolChoice,
 }
 
 impl LlmRequest {
@@ -203,6 +265,7 @@ impl LlmRequest {
             tools: None,
             max_tokens: 1024,
             temperature: 0.7,
+            tool_choice: ToolChoice::Auto,
         }
     }
 
@@ -221,6 +284,12 @@ impl LlmRequest {
     /// Set temperature.
     pub fn with_temperature(mut self, temperature: f32) -> Self {
         self.temperature = temperature;
+        self
+    }
+
+    /// Set tool choice behavior.
+    pub fn with_tool_choice(mut self, choice: ToolChoice) -> Self {
+        self.tool_choice = choice;
         self
     }
 }

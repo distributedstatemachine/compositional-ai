@@ -66,6 +66,7 @@
 //! - **Zero-cost tracing**: Const generics compile out tracing in release builds
 
 pub mod agent;
+pub mod hooks;
 pub mod llm;
 pub mod orchestrator;
 pub mod requests;
@@ -74,15 +75,17 @@ pub mod trace;
 
 // Re-export key types at crate root
 pub use agent::{AgentConfig, AgentError, AgentLoop, AgentResult, AgentTask, SimpleAgent};
+pub use hooks::{AgentHook, CompositeHook, LoggingHook, NullHook};
 pub use llm::{DeterministicMockLlm, LlmClient, MockLlmClient};
 pub use orchestrator::{
     fanout_pipeline, sequential_pipeline, AgentRunner, AgentWrapper, Orchestrator,
     OrchestratorResult, PipelineStage,
 };
 pub use requests::{
-    LlmRequest, LlmResponse, Message, Role, ToolCallRequest, ToolInvoke, ToolResult, ToolSchema,
+    Document, LlmRequest, LlmResponse, Message, Role, ToolCallRequest, ToolChoice, ToolInvoke,
+    ToolResult, ToolSchema,
 };
-pub use tool::ToolRegistry;
+pub use tool::{ToolDef, ToolRegistry};
 pub use trace::{AgentOp, AgentTrace, TraceEvent, TraceSummary};
 
 // Re-export core types commonly used with agents

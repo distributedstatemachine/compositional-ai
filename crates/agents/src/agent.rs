@@ -4,8 +4,9 @@
 //! providing a traceable async computation that orchestrates
 //! LLM calls and tool execution.
 
+use crate::hooks::{AgentHook, NullHook};
 use crate::llm::LlmClient;
-use crate::requests::{LlmRequest, LlmResponse, Message};
+use crate::requests::{Document, LlmRequest, LlmResponse, Message, ToolChoice};
 use crate::tool::ToolRegistry;
 use crate::trace::{AgentOp, AgentTrace, TraceEvent};
 use compositional_core::error::CoreError;
@@ -18,33 +19,74 @@ use std::time::Instant;
 // ============================================================================
 
 /// Configuration for an agent.
+///
+/// Inspired by rig-core's Agent struct, this provides:
+/// - Agent metadata (name, description) for logging and multi-agent workflows
+/// - Static context documents that are always included
+/// - Tool choice behavior control
 #[derive(Debug, Clone)]
 pub struct AgentConfig {
+    /// Agent name (for logging and identification)
+    pub name: Option<String>,
+    /// Agent description (useful in multi-agent workflows)
+    pub description: Option<String>,
     /// Maximum number of tool call iterations
     pub max_iterations: usize,
-    /// System prompt
+    /// System prompt (preamble)
     pub system_prompt: Option<String>,
+    /// Static context documents always included in prompts
+    pub static_context: Vec<Document>,
     /// Maximum tokens for LLM responses
     pub max_tokens: usize,
     /// Temperature for LLM sampling
     pub temperature: f32,
+    /// Tool choice behavior
+    pub tool_choice: ToolChoice,
 }
 
 impl Default for AgentConfig {
     fn default() -> Self {
         Self {
+            name: None,
+            description: None,
             max_iterations: 10,
             system_prompt: None,
+            static_context: Vec::new(),
             max_tokens: 1024,
             temperature: 0.7,
+            tool_choice: ToolChoice::Auto,
         }
     }
 }
 
 impl AgentConfig {
+    /// Set the agent's name.
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
+    }
+
+    /// Set the agent's description.
+    pub fn with_description(mut self, description: impl Into<String>) -> Self {
+        self.description = Some(description.into());
+        self
+    }
+
     /// Create a new agent config with a system prompt.
     pub fn with_system_prompt(mut self, prompt: impl Into<String>) -> Self {
         self.system_prompt = Some(prompt.into());
+        self
+    }
+
+    /// Add a static context document.
+    pub fn with_context(mut self, doc: Document) -> Self {
+        self.static_context.push(doc);
+        self
+    }
+
+    /// Add multiple static context documents.
+    pub fn with_contexts(mut self, docs: Vec<Document>) -> Self {
+        self.static_context.extend(docs);
         self
     }
 
@@ -63,6 +105,12 @@ impl AgentConfig {
     /// Set temperature.
     pub fn with_temperature(mut self, temp: f32) -> Self {
         self.temperature = temp;
+        self
+    }
+
+    /// Set tool choice behavior.
+    pub fn with_tool_choice(mut self, choice: ToolChoice) -> Self {
+        self.tool_choice = choice;
         self
     }
 }
@@ -161,24 +209,61 @@ impl From<AgentError> for CoreError {
 ///
 /// The agent loop implements `Computation` from core, enabling
 /// zero-cost tracing via `Traced<AgentLoop, ENABLED>`.
-pub struct AgentLoop<L: LlmClient> {
+///
+/// ## Hooks
+///
+/// You can observe execution events via the `AgentHook` trait:
+/// ```ignore
+/// let agent = AgentLoop::new(llm, tools, config)
+///     .with_hook(LoggingHook::new());
+/// ```
+pub struct AgentLoop<L: LlmClient, H: AgentHook = NullHook> {
     /// LLM client
     llm: Arc<L>,
     /// Tool registry
     tools: Arc<ToolRegistry>,
     /// Agent configuration
     config: AgentConfig,
+    /// Execution hook
+    hook: H,
 }
 
-impl<L: LlmClient> AgentLoop<L> {
+impl<L: LlmClient> AgentLoop<L, NullHook> {
     /// Create a new agent loop.
     pub fn new(llm: Arc<L>, tools: Arc<ToolRegistry>, config: AgentConfig) -> Self {
-        Self { llm, tools, config }
+        Self {
+            llm,
+            tools,
+            config,
+            hook: NullHook,
+        }
     }
 
     /// Create with default config.
     pub fn with_defaults(llm: Arc<L>, tools: Arc<ToolRegistry>) -> Self {
         Self::new(llm, tools, AgentConfig::default())
+    }
+}
+
+impl<L: LlmClient, H: AgentHook> AgentLoop<L, H> {
+    /// Add a hook for observing execution events.
+    pub fn with_hook<H2: AgentHook>(self, hook: H2) -> AgentLoop<L, H2> {
+        AgentLoop {
+            llm: self.llm,
+            tools: self.tools,
+            config: self.config,
+            hook,
+        }
+    }
+
+    /// Get the agent's name (if configured).
+    pub fn name(&self) -> Option<&str> {
+        self.config.name.as_deref()
+    }
+
+    /// Get the agent's description (if configured).
+    pub fn description(&self) -> Option<&str> {
+        self.config.description.as_deref()
     }
 
     /// Execute the agent loop synchronously.
@@ -189,9 +274,13 @@ impl<L: LlmClient> AgentLoop<L> {
         let mut iterations = 0;
         let mut tool_calls_made = Vec::new();
 
+        // Notify hook of agent start
+        self.hook.on_agent_start(&task.prompt);
+
         loop {
             iterations += 1;
             if iterations > self.config.max_iterations {
+                self.hook.on_error("Maximum iterations exceeded");
                 return Err(AgentError::MaxIterationsExceeded);
             }
 
@@ -205,7 +294,8 @@ impl<L: LlmClient> AgentLoop<L> {
             let llm_start = Instant::now();
             let request = LlmRequest::new(messages.clone())
                 .with_max_tokens(self.config.max_tokens)
-                .with_temperature(self.config.temperature);
+                .with_temperature(self.config.temperature)
+                .with_tool_choice(self.config.tool_choice.clone());
 
             let request = if let Some(schemas) = tool_schemas {
                 request.with_tools(schemas)
@@ -213,11 +303,17 @@ impl<L: LlmClient> AgentLoop<L> {
                 request
             };
 
+            // Notify hook before LLM call
+            self.hook.on_llm_start(&request, iterations);
+
             // Call LLM
-            let response = self
-                .llm
-                .handle(request)
-                .map_err(|e| AgentError::LlmError(e.to_string()))?;
+            let response = self.llm.handle(request).map_err(|e| {
+                self.hook.on_error(&e.to_string());
+                AgentError::LlmError(e.to_string())
+            })?;
+
+            // Notify hook after LLM call
+            self.hook.on_llm_end(&response, iterations);
 
             trace.add_event(TraceEvent {
                 op: AgentOp::LlmCall {
@@ -233,6 +329,10 @@ impl<L: LlmClient> AgentLoop<L> {
                 LlmResponse::Text(text) => {
                     // Final response
                     trace.total_duration_ms = start.elapsed().as_millis() as u64;
+
+                    // Notify hook of completion
+                    self.hook.on_agent_end(&text, iterations);
+
                     return Ok(AgentResult {
                         response: text,
                         iterations,
@@ -248,11 +348,17 @@ impl<L: LlmClient> AgentLoop<L> {
                         let tool_start = Instant::now();
                         tool_calls_made.push(call.name.clone());
 
+                        // Notify hook before tool call
+                        self.hook.on_tool_start(&call.name, &call.arguments);
+
                         let result = self.tools.invoke_for_result(
                             &call.id,
                             &call.name,
                             call.arguments.clone(),
                         );
+
+                        // Notify hook after tool call
+                        self.hook.on_tool_end(&call.name, &result);
 
                         trace.add_event(TraceEvent {
                             op: AgentOp::ToolCall {
@@ -279,9 +385,25 @@ impl<L: LlmClient> AgentLoop<L> {
     fn build_initial_messages(&self, task: &AgentTask) -> Vec<Message> {
         let mut messages = Vec::new();
 
-        // Add system prompt if configured
+        // Build system message with preamble and context
+        let mut system_parts = Vec::new();
+
+        // Add system prompt (preamble) if configured
         if let Some(ref system) = self.config.system_prompt {
-            messages.push(Message::system(system));
+            system_parts.push(system.clone());
+        }
+
+        // Add static context documents
+        if !self.config.static_context.is_empty() {
+            system_parts.push("\n\n# Context\n".to_string());
+            for doc in &self.config.static_context {
+                system_parts.push(doc.as_context());
+            }
+        }
+
+        // Combine into single system message
+        if !system_parts.is_empty() {
+            messages.push(Message::system(system_parts.join("\n")));
         }
 
         // Add history
@@ -294,18 +416,19 @@ impl<L: LlmClient> AgentLoop<L> {
     }
 }
 
-impl<L: LlmClient> Clone for AgentLoop<L> {
+impl<L: LlmClient, H: AgentHook + Clone> Clone for AgentLoop<L, H> {
     fn clone(&self) -> Self {
         Self {
             llm: Arc::clone(&self.llm),
             tools: Arc::clone(&self.tools),
             config: self.config.clone(),
+            hook: self.hook.clone(),
         }
     }
 }
 
 // Implement Computation trait for integration with core's tracing
-impl<L: LlmClient + 'static> Computation for AgentLoop<L> {
+impl<L: LlmClient + 'static, H: AgentHook + Clone + 'static> Computation for AgentLoop<L, H> {
     type Input = AgentTask;
     type Output = AgentResult;
 
