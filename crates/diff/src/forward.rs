@@ -47,9 +47,9 @@ pub struct DiffGraph {
     /// The underlying diagram
     pub diagram: Diagram<DiffOp>,
     /// Maps input indices to their node indices
-    input_nodes: HashMap<usize, NodeIndex>,
+    pub(crate) input_nodes: HashMap<usize, NodeIndex>,
     /// Output node indices (in order)
-    output_nodes: Vec<NodeIndex>,
+    pub(crate) output_nodes: Vec<NodeIndex>,
 }
 
 impl DiffGraph {
@@ -482,14 +482,11 @@ mod tests {
 
     #[test]
     fn test_add_relu_chain() {
-        // y = ReLU(x + c)
+        // y = ReLU(x + bias)
         let mut graph = DiffGraph::new();
         let x = graph.input(0, vec![3]);
-        let c = graph.constant(1.0);
-        // Note: this is element-wise, c broadcasts
-        // For simplicity, we'll test with matching shapes
-        let x2 = graph.input(1, vec![3]); // Use another input for the constant
-        let sum = graph.add(x, x2);
+        let bias = graph.input(1, vec![3]); // bias vector
+        let sum = graph.add(x, bias);
         let y = graph.relu(sum);
         graph.mark_output(y);
 
@@ -558,7 +555,7 @@ mod tests {
 
     #[test]
     fn test_diamond_graph() {
-        // Diamond: x -> [a, b] -> c
+        // Diamond: x -> [a, b] -> c (where c = a + b)
         //          x
         //         / \
         //        a   b
@@ -567,27 +564,17 @@ mod tests {
         let mut graph = DiffGraph::new();
         let x = graph.input(0, vec![2]);
         let a = graph.relu(x);
-        let b = graph.relu(x); // both use x (this is why we need Copy node in practice)
-                               // For this test, we'll connect x to both a and b
-                               // In a real graph, we'd use Copy, but this tests the DAG structure
-
-        // Create a new graph that properly shares x
-        let mut graph2 = DiffGraph::new();
-        let x2 = graph2.input(0, vec![2]);
-        // ReLU of x
-        let a2 = graph2.relu(x2);
-        // We can't easily share x in this builder, so let's test a simpler case
+        let b = graph.relu(x); // both use x - tests fan-out in DAG
+        let c = graph.add(a, b); // combine outputs
+        graph.mark_output(c);
 
         let input = RTensor::vector(vec![-1.0, 2.0]);
-        let outputs = graph.forward(&[input.clone()]);
+        let outputs = graph.forward(&[input]);
+
         // a = ReLU(x) = [0, 2]
         // b = ReLU(x) = [0, 2]
-        assert_eq!(outputs.len(), 0); // No outputs marked yet
-
-        // Mark a as output
-        graph.mark_output(a);
-        let outputs = graph.forward(&[input]);
-        assert_eq!(outputs[0].data, vec![0.0, 2.0]);
+        // c = a + b = [0, 4]
+        assert_eq!(outputs[0].data, vec![0.0, 4.0]);
     }
 
     #[test]

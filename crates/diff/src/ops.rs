@@ -186,6 +186,62 @@ impl RTensor {
             data,
         }
     }
+
+    /// Apply a function to each element.
+    pub fn map(&self, f: impl Fn(f32) -> f32) -> RTensor {
+        let data: Vec<f32> = self.data.iter().map(|&x| f(x)).collect();
+        RTensor {
+            shape: self.shape.clone(),
+            data,
+        }
+    }
+
+    /// Transpose a 2D matrix.
+    pub fn transpose(&self) -> RTensor {
+        assert_eq!(self.shape.len(), 2, "transpose requires 2D tensor");
+        let rows = self.shape[0];
+        let cols = self.shape[1];
+
+        let mut result = vec![0.0; rows * cols];
+        for i in 0..rows {
+            for j in 0..cols {
+                result[j * rows + i] = self.data[i * cols + j];
+            }
+        }
+
+        RTensor {
+            shape: vec![cols, rows],
+            data: result,
+        }
+    }
+
+    /// Broadcast a scalar to match a given shape.
+    pub fn broadcast_to(&self, shape: Vec<usize>) -> RTensor {
+        if self.shape == shape {
+            return self.clone();
+        }
+
+        // Handle scalar broadcast
+        if self.is_scalar() || self.data.len() == 1 {
+            let size: usize = shape.iter().product();
+            return RTensor {
+                shape,
+                data: vec![self.data[0]; size],
+            };
+        }
+
+        panic!("Cannot broadcast shape {:?} to {:?}", self.shape, shape);
+    }
+
+    /// Create a tensor of ones with the same shape.
+    pub fn ones_like(&self) -> RTensor {
+        RTensor::full(self.shape.clone(), 1.0)
+    }
+
+    /// Create a tensor of zeros with the same shape.
+    pub fn zeros_like(&self) -> RTensor {
+        RTensor::zeros(self.shape.clone())
+    }
 }
 
 impl fmt::Debug for RTensor {
@@ -307,6 +363,95 @@ impl DiffOp {
         match self {
             DiffOp::Copy { n_outputs } => *n_outputs,
             _ => 1,
+        }
+    }
+
+    /// Compute the Vector-Jacobian Product (VJP) for reverse-mode autodiff.
+    ///
+    /// Given the forward inputs and the gradient of the loss with respect to
+    /// the outputs, compute the gradient with respect to the inputs.
+    ///
+    /// # Arguments
+    ///
+    /// * `inputs` - The inputs that were passed to this operation during forward
+    /// * `output_grads` - The gradient of the loss w.r.t. this operation's outputs
+    ///
+    /// # Returns
+    ///
+    /// A vector of gradients, one for each input to this operation.
+    pub fn vjp(&self, inputs: &[RTensor], output_grads: &[RTensor]) -> Vec<RTensor> {
+        match self {
+            DiffOp::Input { .. } => {
+                // Input nodes: gradient passes through
+                vec![output_grads[0].clone()]
+            }
+
+            DiffOp::Const { .. } => {
+                // Constants have no inputs to propagate to
+                vec![]
+            }
+
+            DiffOp::Add => {
+                // z = x + y
+                // ∂L/∂x = ∂L/∂z, ∂L/∂y = ∂L/∂z
+                let grad = &output_grads[0];
+                vec![grad.clone(), grad.clone()]
+            }
+
+            DiffOp::Mul => {
+                // z = x * y
+                // ∂L/∂x = ∂L/∂z * y, ∂L/∂y = ∂L/∂z * x
+                let (x, y) = (&inputs[0], &inputs[1]);
+                let grad = &output_grads[0];
+                vec![grad.mul(y), grad.mul(x)]
+            }
+
+            DiffOp::MatMul => {
+                // C = A @ B where A is (m,k), B is (k,n), C is (m,n)
+                // ∂L/∂A = (∂L/∂C) @ Bᵀ  -> (m,n) @ (n,k) = (m,k)
+                // ∂L/∂B = Aᵀ @ (∂L/∂C)  -> (k,m) @ (m,n) = (k,n)
+                let (a, b) = (&inputs[0], &inputs[1]);
+                let grad_c = &output_grads[0];
+
+                let grad_a = grad_c.matmul(&b.transpose());
+                let grad_b = a.transpose().matmul(grad_c);
+
+                vec![grad_a, grad_b]
+            }
+
+            DiffOp::ReLU => {
+                // y = max(0, x)
+                // ∂L/∂x = ∂L/∂y * (x > 0 ? 1 : 0)
+                let x = &inputs[0];
+                let grad = &output_grads[0];
+
+                let mask = x.map(|v| if v > 0.0 { 1.0 } else { 0.0 });
+                vec![grad.mul(&mask)]
+            }
+
+            DiffOp::SumAll => {
+                // s = sum(x)
+                // ∂L/∂xᵢ = ∂L/∂s for all i (broadcast)
+                let x = &inputs[0];
+                let grad = &output_grads[0];
+
+                vec![grad.broadcast_to(x.shape.clone())]
+            }
+
+            DiffOp::Copy { n_outputs } => {
+                // (y₁, y₂, ...) = (x, x, ...)
+                // ∂L/∂x = ∂L/∂y₁ + ∂L/∂y₂ + ...
+                let mut sum = output_grads[0].clone();
+                for g in output_grads.iter().take(*n_outputs).skip(1) {
+                    sum = sum.add(g);
+                }
+                vec![sum]
+            }
+
+            DiffOp::Param { .. } => {
+                // Parameters: gradient passes through
+                vec![output_grads[0].clone()]
+            }
         }
     }
 }

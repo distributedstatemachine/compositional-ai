@@ -15,7 +15,7 @@
 //! - [`tensor`] — Const generic tensors with compile-time shape checking (Session 7)
 //! - [`ops`] — Differentiable operations (Session 8)
 //! - [`forward`] — Forward evaluation via topological sort (Session 8)
-//! - `backward` — Reverse-mode autodiff (Session 9, coming)
+//! - [`mod@backward`] — Reverse-mode autodiff (Session 9)
 //! - `optim` — Gradient descent optimization (Session 10, coming)
 //!
 //! ## Example: Const Generic Tensors (Session 7)
@@ -50,11 +50,13 @@
 //! assert_eq!(result[0].data, vec![1.0, 1.0, 1.0]);
 //! ```
 
+pub mod backward;
 pub mod forward;
 pub mod ops;
 pub mod tensor;
 
 // Re-export key types
+pub use backward::{backward, grad, grad_check, ForwardCache, ForwardValue, GradCheckError};
 pub use forward::{DiffGraph, ForwardEval};
 pub use ops::{DiffOp, RTensor};
 pub use tensor::{Linear, Tensor, MLP};
