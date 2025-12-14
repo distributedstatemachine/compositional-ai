@@ -31,80 +31,19 @@
 //! | Capability control | Runtime checks | Trait bounds |
 //! | Overhead | Always present | Zero at runtime |
 //! | Guarantees | "Should work" | "Will work or won't compile" |
+//!
+//! # Capability Traits
+//!
+//! The standard capability traits ([`HasDatabase`], [`HasLLM`], [`HasFileSystem`],
+//! [`HasReadOnlyDatabase`]) are defined in `compositional_core::capability` and
+//! re-exported here for convenience.
 
 use std::sync::Arc;
 
-// ============================================================================
-// Capability Traits
-// ============================================================================
-
-/// Capability to access a database.
-///
-/// Agents with `S: HasDatabase` can query the database.
-pub trait HasDatabase {
-    /// Query the database.
-    fn query(&self, query: &str) -> Result<Vec<String>, ScopedError>;
-}
-
-/// Capability to access an LLM.
-///
-/// Agents with `S: HasLLM` can generate completions.
-pub trait HasLLM {
-    /// Generate a completion.
-    fn complete(&self, prompt: &str) -> Result<String, ScopedError>;
-}
-
-/// Capability to access the filesystem.
-///
-/// Agents with `S: HasFileSystem` can read/write files.
-pub trait HasFileSystem {
-    /// Read a file.
-    fn read_file(&self, path: &str) -> Result<String, ScopedError>;
-
-    /// Write a file.
-    fn write_file(&self, path: &str, content: &str) -> Result<(), ScopedError>;
-}
-
-/// Capability for read-only database access.
-///
-/// This is more restrictive than `HasDatabase` — demonstrates principle of least privilege.
-pub trait HasReadOnlyDatabase {
-    /// Query the database (read-only).
-    fn read_query(&self, query: &str) -> Result<Vec<String>, ScopedError>;
-}
-
-// ============================================================================
-// Error Type
-// ============================================================================
-
-/// Errors that can occur in scoped agent operations.
-#[derive(Debug, Clone)]
-pub enum ScopedError {
-    /// Database error
-    Database(String),
-    /// LLM error
-    LLM(String),
-    /// File system error
-    FileSystem(String),
-    /// Permission denied
-    PermissionDenied(String),
-    /// Agent execution error
-    Execution(String),
-}
-
-impl std::fmt::Display for ScopedError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ScopedError::Database(msg) => write!(f, "Database error: {}", msg),
-            ScopedError::LLM(msg) => write!(f, "LLM error: {}", msg),
-            ScopedError::FileSystem(msg) => write!(f, "File system error: {}", msg),
-            ScopedError::PermissionDenied(msg) => write!(f, "Permission denied: {}", msg),
-            ScopedError::Execution(msg) => write!(f, "Execution error: {}", msg),
-        }
-    }
-}
-
-impl std::error::Error for ScopedError {}
+// Re-export core capability traits for convenience
+pub use compositional_core::{
+    CapabilityError, HasDatabase, HasFileSystem, HasLLM, HasReadOnlyDatabase,
+};
 
 // ============================================================================
 // Mock Implementations (for demonstration)
@@ -241,13 +180,13 @@ impl FullScope {
 }
 
 impl HasDatabase for FullScope {
-    fn query(&self, query: &str) -> Result<Vec<String>, ScopedError> {
+    fn query(&self, query: &str) -> Result<Vec<String>, CapabilityError> {
         Ok(self.db.query(query))
     }
 }
 
 impl HasLLM for FullScope {
-    fn complete(&self, prompt: &str) -> Result<String, ScopedError> {
+    fn complete(&self, prompt: &str) -> Result<String, CapabilityError> {
         Ok(self.llm.complete(prompt))
     }
 }
@@ -269,13 +208,13 @@ impl DatabaseOnlyScope {
 }
 
 impl HasDatabase for DatabaseOnlyScope {
-    fn query(&self, query: &str) -> Result<Vec<String>, ScopedError> {
+    fn query(&self, query: &str) -> Result<Vec<String>, CapabilityError> {
         Ok(self.db.query(query))
     }
 }
 
 impl HasReadOnlyDatabase for DatabaseOnlyScope {
-    fn read_query(&self, query: &str) -> Result<Vec<String>, ScopedError> {
+    fn read_query(&self, query: &str) -> Result<Vec<String>, CapabilityError> {
         Ok(self.db.query(query))
     }
 }
@@ -297,7 +236,7 @@ impl ReadOnlyScope {
 }
 
 impl HasReadOnlyDatabase for ReadOnlyScope {
-    fn read_query(&self, query: &str) -> Result<Vec<String>, ScopedError> {
+    fn read_query(&self, query: &str) -> Result<Vec<String>, CapabilityError> {
         Ok(self.db.query(query))
     }
 }
@@ -321,14 +260,16 @@ impl FileSystemScope {
 }
 
 impl HasFileSystem for FileSystemScope {
-    fn read_file(&self, path: &str) -> Result<String, ScopedError> {
+    fn read_file(&self, path: &str) -> Result<String, CapabilityError> {
         self.fs
             .borrow()
             .read(path)
-            .ok_or_else(|| ScopedError::FileSystem(format!("File not found: {}", path)))
+            .ok_or_else(|| CapabilityError::HandlerFailed {
+                message: format!("File not found: {}", path),
+            })
     }
 
-    fn write_file(&self, path: &str, content: &str) -> Result<(), ScopedError> {
+    fn write_file(&self, path: &str, content: &str) -> Result<(), CapabilityError> {
         self.fs.borrow_mut().write(path, content);
         Ok(())
     }
@@ -407,7 +348,7 @@ where
     /// Execute a task using database and LLM.
     ///
     /// Can use: `self.scope.query()`, `self.scope.complete()`
-    pub fn execute(&self, task: &str) -> Result<String, ScopedError> {
+    pub fn execute(&self, task: &str) -> Result<String, CapabilityError> {
         self.executions.set(self.executions.get() + 1);
 
         // Query database for context
@@ -431,7 +372,7 @@ where
     ///
     /// Can use: `self.scope.query()`
     /// Cannot use: LLM (not in scope bounds!)
-    pub fn query_only(&self, query: &str) -> Result<Vec<String>, ScopedError> {
+    pub fn query_only(&self, query: &str) -> Result<Vec<String>, CapabilityError> {
         self.executions.set(self.executions.get() + 1);
         self.scope.query(query)
     }
@@ -445,7 +386,7 @@ where
     /// Execute a read-only query.
     ///
     /// Even more restricted — only read operations.
-    pub fn read_only_query(&self, query: &str) -> Result<Vec<String>, ScopedError> {
+    pub fn read_only_query(&self, query: &str) -> Result<Vec<String>, CapabilityError> {
         self.executions.set(self.executions.get() + 1);
         self.scope.read_query(query)
     }
@@ -457,13 +398,13 @@ where
     S: HasFileSystem,
 {
     /// Read a file.
-    pub fn read_file(&self, path: &str) -> Result<String, ScopedError> {
+    pub fn read_file(&self, path: &str) -> Result<String, CapabilityError> {
         self.executions.set(self.executions.get() + 1);
         self.scope.read_file(path)
     }
 
     /// Write a file.
-    pub fn write_file(&self, path: &str, content: &str) -> Result<(), ScopedError> {
+    pub fn write_file(&self, path: &str, content: &str) -> Result<(), CapabilityError> {
         self.executions.set(self.executions.get() + 1);
         self.scope.write_file(path, content)
     }
@@ -496,13 +437,13 @@ impl ThreadSafeScope {
 }
 
 impl HasDatabase for ThreadSafeScope {
-    fn query(&self, query: &str) -> Result<Vec<String>, ScopedError> {
+    fn query(&self, query: &str) -> Result<Vec<String>, CapabilityError> {
         Ok(self.db.query(query))
     }
 }
 
 impl HasLLM for ThreadSafeScope {
-    fn complete(&self, prompt: &str) -> Result<String, ScopedError> {
+    fn complete(&self, prompt: &str) -> Result<String, CapabilityError> {
         Ok(self.llm.complete(prompt))
     }
 }
@@ -526,7 +467,10 @@ impl HasLLM for ThreadSafeScope {
 ///     });
 /// }
 /// ```
-pub fn parallel_execute<S>(scope: Arc<S>, tasks: Vec<String>) -> Vec<Result<String, ScopedError>>
+pub fn parallel_execute<S>(
+    scope: Arc<S>,
+    tasks: Vec<String>,
+) -> Vec<Result<String, CapabilityError>>
 where
     S: HasDatabase + HasLLM + Send + Sync + 'static,
 {
@@ -587,7 +531,7 @@ where
     S: HasDatabase + HasLLM,
 {
     /// Execute a task.
-    pub fn execute(&self, task: &str) -> Result<String, ScopedError> {
+    pub fn execute(&self, task: &str) -> Result<String, CapabilityError> {
         let context = self.scope.query(task)?;
         let prompt = format!("Task: {}. Context: {}", task, context.join(", "));
         let response = self.scope.complete(&prompt)?;
@@ -637,7 +581,7 @@ where
     }
 
     /// Execute the pipeline.
-    pub fn execute(&self, initial_input: &str) -> Result<Vec<PipelineResult>, ScopedError> {
+    pub fn execute(&self, initial_input: &str) -> Result<Vec<PipelineResult>, CapabilityError> {
         let mut results = Vec::new();
         let mut current_input = initial_input.to_string();
 
@@ -671,7 +615,7 @@ pub mod security_demo {
     pub fn read_only_agent<S: HasReadOnlyDatabase>(
         scope: &S,
         query: &str,
-    ) -> Result<Vec<String>, ScopedError> {
+    ) -> Result<Vec<String>, CapabilityError> {
         let agent = ScopedAgent::new(scope, "read-only");
         agent.read_only_query(query)
     }
@@ -682,7 +626,7 @@ pub mod security_demo {
     pub fn full_access_agent<S: HasDatabase + HasLLM>(
         scope: &S,
         task: &str,
-    ) -> Result<String, ScopedError> {
+    ) -> Result<String, CapabilityError> {
         let agent = ScopedAgent::new(scope, "full-access");
         agent.execute(task)
     }

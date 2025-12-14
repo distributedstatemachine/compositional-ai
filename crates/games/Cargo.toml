@@ -6,6 +6,7 @@ description = "Open Games: Compositional game theory with swappable policies, en
 license.workspace = true
 
 [dependencies]
+compositional-core = { path = "../core" }
 thiserror.workspace = true
 
 [dev-dependencies]

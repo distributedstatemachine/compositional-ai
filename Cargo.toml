@@ -6,9 +6,7 @@ members = [
     "crates/prob",
     "crates/nlp",
     "crates/games",
-    # Future crates:
-    # "crates/operads",
-    # "demos",
+    "crates/agents",
 ]
 
 [workspace.package]

@@ -26,7 +26,10 @@ pub mod shape;
 pub mod tracing;
 
 // Re-export key types at crate root for convenience
-pub use capability::{Capability, CapabilityError, CapabilityScope, Handles, Request};
+pub use capability::{
+    Capability, CapabilityError, CapabilityScope, Handles, HasDatabase, HasFileSystem, HasLLM,
+    HasReadOnlyDatabase, Request,
+};
 pub use cat::{Coproduct, Scope};
 pub use diagram::{Diagram, Node, Port};
 pub use error::CoreError;

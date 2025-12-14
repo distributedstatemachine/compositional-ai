@@ -369,6 +369,140 @@ impl fmt::Debug for CapabilityScope {
 }
 
 // ============================================================================
+// Standard Capability Traits
+// ============================================================================
+//
+// These traits provide compile-time capability checking via trait bounds.
+// Unlike the Yoneda-style Request/Handles pattern (which is runtime extensible),
+// these traits enable static verification that a scope has specific capabilities.
+//
+// Use these when you want:
+// - Compile-time guarantees that capabilities exist
+// - Simple trait bounds like `S: HasDatabase + HasLLM`
+// - Zero runtime overhead for capability checking
+//
+// Use Request/Handles when you want:
+// - Runtime extensibility (new capabilities without recompilation)
+// - Dynamic capability discovery
+// - Heterogeneous capability collections
+
+/// Capability to access a database.
+///
+/// Scopes implementing this trait can query a database.
+///
+/// # Example
+///
+/// ```rust
+/// use compositional_core::capability::{HasDatabase, CapabilityError};
+///
+/// struct MyScope { /* database connection */ }
+///
+/// impl HasDatabase for MyScope {
+///     fn query(&self, query: &str) -> Result<Vec<String>, CapabilityError> {
+///         // Execute query and return results
+///         Ok(vec![format!("Result for: {}", query)])
+///     }
+/// }
+///
+/// fn agent_with_db<S: HasDatabase>(scope: &S) -> Result<(), CapabilityError> {
+///     let results = scope.query("SELECT * FROM users")?;
+///     println!("Found {} rows", results.len());
+///     Ok(())
+/// }
+/// ```
+pub trait HasDatabase {
+    /// Query the database.
+    fn query(&self, query: &str) -> Result<Vec<String>, CapabilityError>;
+}
+
+/// Capability to access an LLM.
+///
+/// Scopes implementing this trait can generate completions.
+///
+/// # Example
+///
+/// ```rust
+/// use compositional_core::capability::{HasLLM, CapabilityError};
+///
+/// struct MyScope { /* LLM client */ }
+///
+/// impl HasLLM for MyScope {
+///     fn complete(&self, prompt: &str) -> Result<String, CapabilityError> {
+///         // Call LLM and return completion
+///         Ok(format!("Response to: {}", prompt))
+///     }
+/// }
+///
+/// fn agent_with_llm<S: HasLLM>(scope: &S) -> Result<String, CapabilityError> {
+///     scope.complete("What is the capital of France?")
+/// }
+/// ```
+pub trait HasLLM {
+    /// Generate a completion.
+    fn complete(&self, prompt: &str) -> Result<String, CapabilityError>;
+}
+
+/// Capability to access the filesystem.
+///
+/// Scopes implementing this trait can read and write files.
+///
+/// # Example
+///
+/// ```rust
+/// use compositional_core::capability::{HasFileSystem, CapabilityError};
+///
+/// struct MyScope { /* filesystem access */ }
+///
+/// impl HasFileSystem for MyScope {
+///     fn read_file(&self, path: &str) -> Result<String, CapabilityError> {
+///         // Read file contents
+///         Ok(format!("Contents of {}", path))
+///     }
+///
+///     fn write_file(&self, path: &str, content: &str) -> Result<(), CapabilityError> {
+///         // Write file
+///         Ok(())
+///     }
+/// }
+/// ```
+pub trait HasFileSystem {
+    /// Read a file.
+    fn read_file(&self, path: &str) -> Result<String, CapabilityError>;
+
+    /// Write a file.
+    fn write_file(&self, path: &str, content: &str) -> Result<(), CapabilityError>;
+}
+
+/// Capability for read-only database access.
+///
+/// This is more restrictive than [`HasDatabase`] — demonstrates principle of least privilege.
+/// Use this when an agent should only be able to read from the database.
+///
+/// # Example
+///
+/// ```rust
+/// use compositional_core::capability::{HasReadOnlyDatabase, CapabilityError};
+///
+/// struct ReadOnlyDbScope { /* read-only connection */ }
+///
+/// impl HasReadOnlyDatabase for ReadOnlyDbScope {
+///     fn read_query(&self, query: &str) -> Result<Vec<String>, CapabilityError> {
+///         // Only SELECT queries allowed
+///         Ok(vec![format!("Read result for: {}", query)])
+///     }
+/// }
+///
+/// // This agent can ONLY read — the type system prevents writes!
+/// fn read_only_agent<S: HasReadOnlyDatabase>(scope: &S, query: &str) -> Result<Vec<String>, CapabilityError> {
+///     scope.read_query(query)
+/// }
+/// ```
+pub trait HasReadOnlyDatabase {
+    /// Query the database (read-only).
+    fn read_query(&self, query: &str) -> Result<Vec<String>, CapabilityError>;
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 
